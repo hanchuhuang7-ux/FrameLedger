@@ -6,6 +6,7 @@
   "engines": { "node": ">=20" },
   "scripts": {
     "build": "moon build --target js --release && node tools/package.mjs",
-    "test": "moon test --target js && node --test tests/integration.test.mjs"
+    "test": "moon test --target js && node --test",
+    "verify": "moon fmt --check && moon check --target js && npm run build && npm test && moon test --target wasm-gc && moon package --frozen"
   }
 }

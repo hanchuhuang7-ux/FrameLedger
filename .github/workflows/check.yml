@@ -1,0 +1,27 @@
+name: Check FrameLedger
+
+on: [push, pull_request, workflow_dispatch]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 24]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          package-manager-cache: false
+      - name: Install the MoonBit toolchain
+        shell: bash
+        run: |
+          curl --fail --silent --show-error --location https://cli.moonbitlang.com/install/unix.sh --output "$RUNNER_TEMP/moon-install.sh"
+          bash "$RUNNER_TEMP/moon-install.sh"
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+      - run: moon version --all
+      - run: npm run verify

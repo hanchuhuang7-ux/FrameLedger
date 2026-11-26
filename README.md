@@ -33,12 +33,10 @@ node cli.mjs examples/interrupted "shot_####.png" 2 8 --step 2 --json
 本地验证使用 MoonBit `v1.0.0-rc1+3c0520448` 与 Node.js `26.13.0`。项目使用 MoonBit 标准库和 Node 内置模块。
 
 ```sh
-npm run build
-npm test
-moon test --target wasm-gc
+npm run verify
 ```
 
-8 项 MoonBit 单元测试覆盖命名、帧段、稀疏区间与流式输入。10 项 Node 集成测试包含真实 PNG 的不同分块方式、中段数据位翻转、命令行退出码，以及与逐帧参考算法对照的 600 组随机帧段。
+本地和持续集成共用这条命令，检查格式、类型、正式构建、JavaScript 与 WebAssembly 测试，并生成本地 MoonBit 包。Node 集成测试包含真实 PNG 的不同分块方式、中段数据位翻转、命令行退出码，以及与逐帧参考算法对照的 600 组随机帧段。
 
 `examples/interrupted` 收录随包的故障样本。`examples/render.py` 可以用 Blender 的出厂默认场景重新生成 8 张完整图。请将最后一个参数设为一个新的测试目录。
 
