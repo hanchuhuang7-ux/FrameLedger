@@ -258,6 +258,9 @@ input[type=text],input[type=number] {
 .bin.damaged {
   background: #b75569;
 }
+.bin.unverified, .review-color {
+  background: #7165a5;
+}
 .bin.mixed {
   background: repeating-linear-gradient(90deg,#7b9186 0 3px,#b18c70 3px 6px);
 }
@@ -382,13 +385,13 @@ input[type=text],input[type=number] {
 <header><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span><strong>FrameLedger</strong><small>本地版 · {{VERSION}}</small></header>
 <main>
 <h1>渲染帧检查器</h1>
-<p class="intro">检查动画序列的缺帧、空文件和受损 PNG，生成补渲染清单。</p>
+<p class="intro">检查动画序列的缺帧、空文件及 PNG、EXR 结构，生成补渲染清单。</p>
 <div class="layout">
 <section class="panel" aria-labelledby="input-title">
 <h2 id="input-title">检查哪组帧</h2>
 <form id="settings">
 <fieldset id="controls">
-<div class="files"><button type="button" id="choose">选择文件夹</button><button class="link" type="button" id="use-demo">使用示例</button></div>
+<div class="files"><button type="button" id="choose">选择文件夹</button><button class="link" type="button" id="use-demo">PNG 示例</button><button class="link" type="button" id="exr-demo">EXR 示例</button></div>
 <input id="folder" type="file" webkitdirectory multiple hidden>
 <p id="source" class="source"></p>
 <button class="link" type="button" id="add-overlay">添加补帧目录</button>
@@ -397,9 +400,9 @@ input[type=text],input[type=number] {
 <input id="job-file" type="file" accept=".json,application/json" hidden>
 <div class="form-section"><label for="pattern">命名模板</label><input id="pattern" type="text" value="shot_####.png" required spellcheck="false"><p class="hint">用 # 表示帧号位数。例如 shot_####.png 匹配 shot_0001.png。</p></div>
 <div class="numbers"><label>起始帧<input id="first" type="number" value="1" min="-1000000000" max="1000000000" required></label><label>结束帧<input id="last" type="number" value="8" min="-1000000000" max="1000000000" required></label><label>步长<input id="step" type="number" value="1" min="1" max="1000000000" required></label></div>
-<label class="check"><input id="check-png" type="checkbox" checked>逐块核对 PNG 的 CRC</label>
-<label class="form-section" for="size">预期 PNG 尺寸（可选）</label><input id="size" type="text" placeholder="例如 1920x1080" spellcheck="false">
-<p class="hint">EXR 等其他格式按文件是否存在、是否为空检查。</p>
+<label class="check"><input id="check-png" type="checkbox" checked>检查 PNG 和 EXR 文件结构</label>
+<label class="form-section" for="size">预期图像尺寸（可选）</label><input id="size" type="text" placeholder="例如 1920x1080" spellcheck="false">
+<p class="hint">PNG 核对 CRC。EXR 核对扫描线区块，深度和分块格式单列待复核。</p>
 <button class="primary" type="submit">检查帧序列</button>
 </fieldset></form>
 <p class="status" id="status" role="status" aria-live="polite"></p>
@@ -410,7 +413,8 @@ input[type=text],input[type=number] {
 <dl class="result-list">
 <div><dt><i class="swatch"></i>缺帧</dt><dd class="range" id="missing">—</dd><dd id="missing-count"></dd></div>
 <div><dt><i class="swatch empty-color"></i>空文件</dt><dd class="range" id="empty">—</dd><dd id="empty-count"></dd></div>
-<div><dt><i class="swatch damaged-color"></i>PNG 异常</dt><dd class="range" id="damaged">—</dd><dd id="damaged-count"></dd></div>
+<div><dt><i class="swatch damaged-color"></i>文件异常</dt><dd class="range" id="damaged">—</dd><dd id="damaged-count"></dd></div>
+<div id="review-row" hidden><dt><i class="swatch review-color"></i>待复核</dt><dd class="range" id="unverified">—</dd><dd id="unverified-count"></dd></div>
 </dl>
 <div class="repair"><h2>需要补渲染的帧号</h2><div class="range" id="rerender">—</div></div>
 <details id="details" class="details" hidden><summary>查看文件诊断</summary><ul id="issues"></ul></details>

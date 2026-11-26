@@ -1,5 +1,5 @@
 const el = id => document.getElementById(id);
-const categories = ['missing', 'empty', 'damaged'];
+const categories = ['missing', 'empty', 'damaged', 'unverified'];
 const numberFormat = new Intl.NumberFormat('zh-CN');
 let selected = [];
 let overlays = [];
@@ -16,7 +16,7 @@ function buildMap(report) {
   const grid = el('frame-map');
   grid.replaceChildren();
   const bins = Math.min(48, report.expected);
-  const cursors = { missing: 0, empty: 0, damaged: 0 };
+  const cursors = Object.fromEntries(categories.map(key => [key, 0]));
   for (let i = 0; i < bins; i++) {
     const first = report.first + Math.floor(i * report.expected / bins) * report.step;
     const last = report.first + (Math.floor((i + 1) * report.expected / bins) - 1) * report.step;
@@ -35,10 +35,11 @@ function buildMap(report) {
       hit[category] = count;
     }
     const bad = hit.missing + hit.empty + hit.damaged;
-    const state = bad === 0 ? 'ready' : categories.find(key => hit[key] === length) || 'mixed';
+    const state = bad + hit.unverified === 0 ? 'ready' : categories.find(key => hit[key] === length) || 'mixed';
     const bin = document.createElement('span');
     bin.className = 'bin ' + state;
-    bin.title = '帧 ' + first + (first === last ? '' : ' 至 ' + last) + ' · 需补 ' + bad + ' / ' + length;
+    bin.title = '帧 ' + first + (first === last ? '' : ' 至 ' + last) + ' · 需补 ' + bad + ' / ' + length +
+      (hit.unverified ? ' · 待复核 ' + hit.unverified : '');
     grid.append(bin);
   }
 }
@@ -48,20 +49,22 @@ function show(report) {
   el('ready').textContent = numberFormat.format(report.ready);
   el('expected').textContent = numberFormat.format(report.expected);
   el('scope').textContent = sourceLabel + ' · 帧 ' + report.first + ' 至 ' + report.last + ' · 步长 ' + report.step +
-    (overlays.length ? ' · 补帧目录提供 ' + report.ready_from_overlay + ' 帧' : '');
+    (overlays.length ? ' · 补帧目录提供 ' + report.ready_from_overlay + ' 帧' : '') +
+    (!report.check_png && !report.check_exr ? ' · 仅清点非空文件' : '');
   for (const category of categories) {
     el(category).textContent = formatSpans(report[category], report.step);
     el(category + '-count').textContent = numberFormat.format(report[category + '_count']) + ' 帧';
   }
-  if (report.png_checked === 0) {
-    el('damaged').textContent = report.check_png ? '没有可检查的 PNG' : '未启用';
+  if (report.png_checked + report.exr_checked === 0) {
+    el('damaged').textContent = report.check_png || report.check_exr ? '没有可检查的 PNG 或 EXR' : '未启用';
     el('damaged-count').textContent = '';
   }
+  el('review-row').hidden = !report.unverified_count;
   el('rerender').textContent = formatSpans(report.rerender, report.step);
   el('details').hidden = !report.details.length;
   el('issues').replaceChildren(...report.details.slice(0, 50).map(issue => {
     const li = document.createElement('li');
-    li.textContent = issue.name + ' · ' + issue.reason;
+    li.textContent = (issue.kind === 'unverified' ? '待复核 · ' : '') + issue.name + ' · ' + issue.reason;
     return li;
   }));
   if (report.details.length > 50) {
@@ -116,7 +119,11 @@ async function run() {
       }
     });
     show(report);
-    status(report.expected === report.missing_count ? '未找到匹配文件，请核对模板和帧段。' : '检查完成。');
+    if (report.unverified_count) {
+      status('检查完成。请单独复核 ' + report.unverified_count + ' 帧，自动补帧清单只包含已确认的问题。');
+    } else {
+      status(report.expected === report.missing_count ? '未找到匹配文件，请核对模板和帧段。' : '检查完成。');
+    }
   } catch (error) {
     status(error.message, true);
   } finally {
@@ -139,15 +146,16 @@ function readFolder(fileList) {
   };
 }
 
-const demo = JSON.parse(el('demo-data').textContent).map(({ name, data }) => {
-  const bytes = Uint8Array.from(atob(data), c => c.charCodeAt(0));
-  return new File([bytes], name, { type: 'image/png' });
-});
+const demos = JSON.parse(el('demo-data').textContent);
 
-function useDemo() {
+function useDemo(key) {
   origin = null;
-  setSource('Blender 故障示例', demo);
+  const demo = demos[key];
+  const files = demo.files.map(({ name, data }) => new File([Uint8Array.from(atob(data), c => c.charCodeAt(0))], name));
+  setSource(demo.label, files);
   el('settings').reset();
+  el('pattern').value = demo.pattern;
+  el('last').value = demo.last;
   return run();
 }
 
@@ -196,7 +204,8 @@ el('job-file').addEventListener('change', async event => {
   }
 });
 el('settings').addEventListener('submit', event => { event.preventDefault(); run(); });
-el('use-demo').addEventListener('click', useDemo);
+el('use-demo').addEventListener('click', () => useDemo('png'));
+el('exr-demo').addEventListener('click', () => useDemo('exr'));
 el('export').addEventListener('click', () => {
   if (!lastReport) return;
   const blob = new Blob([JSON.stringify(lastReport, null, 2) + '\n'], { type: 'application/json' });
@@ -207,4 +216,4 @@ el('export').addEventListener('click', () => {
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1500);
 });
-await useDemo();
+await useDemo('exr');

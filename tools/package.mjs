@@ -11,10 +11,16 @@ const engine = await read('_build/js/release/build/frameledger.js');
 const [shared, page, script, license, notice] = await Promise.all([
   read('app/scan.mjs'), read('app/page.html'), read('app/page.mjs'), read('LICENSE'), read('third-party/MoonBit-core-LICENSE.txt'),
 ]);
-const dir = resolve(root, 'examples/interrupted');
-const demo = await Promise.all((await readdir(dir)).sort().map(async name => ({
-  name, data: (await readFile(join(dir, name))).toString('base64'),
-})));
+async function sampleFiles(folder) {
+  const dir = resolve(root, folder);
+  return Promise.all((await readdir(dir)).sort().map(async name => ({
+    name, data: (await readFile(join(dir, name))).toString('base64'),
+  })));
+}
+const demo = {
+  png: { label: 'Blender PNG 示例', pattern: 'shot_####.png', last: 8, files: await sampleFiles('examples/interrupted') },
+  exr: { label: 'Blender EXR 示例', pattern: 'shot_####.exr', last: 5, files: await sampleFiles('examples/exr') },
+};
 const moduleUrl = source => 'data:text/javascript;base64,' + Buffer.from(source).toString('base64');
 const parts = {
   VERSION: version,

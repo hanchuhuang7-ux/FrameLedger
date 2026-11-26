@@ -8,8 +8,8 @@ import { formatSpans, parseSize, readJob, scanSequence } from './app/scan.mjs';
 const usage = '用法：node cli.mjs <目录> <命名模板> <起始帧> <结束帧> [--step 整数] [--size 宽x高] [--overlay 补帧目录] [--fast] [--json]\n' +
   '示例：node cli.mjs examples/interrupted "shot_####.png" 1 8\n' +
   '读取 Blender 镜头设置：node cli.mjs <目录> --job <镜头.json> [--overlay 补帧目录] [--output 报告.json] [--json]\n' +
-  '默认读取 PNG 各块并核对 CRC。--fast 仅按文件存在和大小检查。\n' +
-  '退出码 0 表示齐全，1 表示需要补渲染，2 表示参数或读取出错。';
+  '默认检查 PNG 的 CRC 和 EXR 扫描线区块。--fast 仅按文件存在和大小检查。\n' +
+  '退出码 0 表示按所选模式通过，1 表示需要补渲染，2 表示参数或读取出错，3 表示只剩待复核帧。';
 
 function parseInteger(text) {
   if (typeof text !== 'string' || !/^-?\d+$/.test(text)) throw new Error('需要整数帧号或步长。');
@@ -104,15 +104,16 @@ async function main(args) {
   } else {
     console.log('可用 ' + result.ready + ' / ' + result.expected + ' 帧');
     if (directories.size > 1) console.log('由补帧目录提供 ' + result.ready_from_overlay + ' 帧');
-    for (const [label, key] of [['缺帧', 'missing'], ['空文件', 'empty'], ['PNG 异常', 'damaged'], ['补渲染', 'rerender']]) {
-      const summary = key === 'damaged' && result.png_checked === 0
-        ? (result.check_png ? '没有可检查的 PNG' : '未启用')
+    for (const [label, key] of [['缺帧', 'missing'], ['空文件', 'empty'], ['文件异常', 'damaged'], ['待复核', 'unverified'], ['补渲染', 'rerender']]) {
+      const summary = key === 'damaged' && result.png_checked + result.exr_checked === 0
+        ? (result.check_png || result.check_exr ? '没有可检查的 PNG 或 EXR' : '未启用')
         : formatSpans(result[key], result.step);
       console.log(label + '  ' + summary);
     }
     for (const { name, reason } of result.details) console.log(name + '  ' + reason);
   }
-  return result.rerender.length > 0 ? 1 : 0;
+  if (result.rerender.length) return 1;
+  return result.unverified_count ? 3 : 0;
 }
 
 try {

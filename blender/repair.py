@@ -34,12 +34,16 @@ def checked_spans(values, first, last, step):
 
 
 def repair_ranges(report, job):
-    if report.get("format") != "frameledger.report.v1" or not job.get("origin") or report.get("origin") != job["origin"]:
+    version = report.get("format")
+    if version not in ("frameledger.report.v1", "frameledger.report.v2") or not job.get("origin") or report.get("origin") != job["origin"]:
         raise ValueError("The report must come from settings exported from this saved Blender scene.")
     for key in ("pattern", "first", "last", "step"):
         if report.get(key) != job[key]:
             raise ValueError("Shot setting differs: " + key)
-    if any(report.get("expected_" + k) != job.get(k) for k in ("width", "height")):
+    dims = tuple(report.get("expected_" + k) for k in ("width", "height"))
+    # v0.2 EXR job files carried the scene fingerprint but omitted dimensions.
+    old_exr_job = job["pattern"].lower().endswith(".exr") and dims == (None, None)
+    if not old_exr_job and dims != (job.get("width"), job.get("height")):
         raise ValueError("Report dimensions differ from the exported shot.")
     first, last, step = job["first"], job["last"], job["step"]
     expected = (last - first) // step + 1
@@ -51,12 +55,20 @@ def repair_ranges(report, job):
             raise ValueError("Inconsistent frame count: " + kind)
         faults.extend(spans)
         fault_count += count
-    if report.get("expected") != expected or report.get("ready") != expected - fault_count:
+    review = checked_spans(report.get("unverified", []), first, last, step)
+    review_count = sum((hi - lo) // step + 1 for lo, hi in review)
+    if (review_count != report.get("unverified_count", 0) or
+            (version == "frameledger.report.v1" and review_count)):
+        raise ValueError("Invalid unverified-frame count or report version.")
+    if version == "frameledger.report.v2" and not all(key in report for key in ("unverified", "unverified_count")):
+        raise ValueError("The v2 report must include its unverified ranges.")
+    all_ranges = sorted(faults + review)
+    if any(right[0] <= left[1] for left, right in zip(all_ranges, all_ranges[1:])):
+        raise ValueError("Frame categories overlap.")
+    if report.get("expected") != expected or report.get("ready") != expected - fault_count - review_count:
         raise ValueError("Invalid totals in report.")
     merged = []
     for lo, hi in sorted(faults):
-        if merged and lo <= merged[-1][1]:
-            raise ValueError("Frame categories overlap.")
         if merged and lo == merged[-1][1] + step:
             merged[-1] = (merged[-1][0], hi)
         else:
@@ -64,6 +76,15 @@ def repair_ranges(report, job):
     if merged != checked_spans(report.get("rerender"), first, last, step):
         raise ValueError("Rerender ranges disagree with the audit.")
     return merged, fault_count
+
+
+def same_staged_job(saved, current):
+    if saved == current:
+        return True
+    if (isinstance(saved, dict) and current["pattern"].lower().endswith(".exr") and
+            "width" not in saved and "height" not in saved):
+        return saved == {key: value for key, value in current.items() if key not in ("width", "height")}
+    return False
 
 
 def file_output_nodes(tree, visited):
@@ -127,7 +148,7 @@ def render_plan(scene, job, spans, stage):
         if state_path.is_symlink() or receipts.is_symlink():
             raise ValueError("Invalid staging metadata.")
         if state_path.exists():
-            if read_json(state_path).get("job") != job:
+            if not same_staged_job(read_json(state_path).get("job"), job):
                 raise ValueError("This staging directory belongs to a different shot.")
         else:
             if any(p.name != ".frameledger.lock" for p in stage.iterdir()):
@@ -177,8 +198,10 @@ if __name__ == "__main__":
     args = parser.parse_args(sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else [])
     scene = bpy.context.scene
     job = describe(scene)
-    ranges, count = repair_ranges(read_json(args.report), job)
+    report = read_json(args.report)
+    ranges, count = repair_ranges(report, job)
     made, retained = (0, 0)
     if count and not args.dry_run:
         made, retained = render_plan(scene, job, ranges, Path(args.stage).resolve())
-    print("FRAMELEDGER_REPAIR", json.dumps({"planned": count, "rendered": made, "retained": retained, "ranges": ranges}))
+    print("FRAMELEDGER_REPAIR", json.dumps({"planned": count, "rendered": made, "retained": retained,
+          "unverified": report.get("unverified_count", 0), "ranges": ranges}))

@@ -5,7 +5,7 @@ export function parseSize(text) {
   return { width: Number(match[1]), height: Number(match[2]) };
 }
 
-export function checkOptions(engine, { pattern, first, last, step, width, height, checkPng }) {
+export function checkOptions(engine, { pattern, first, last, step, width, height, checkPng, checkExr = checkPng }) {
   if (typeof pattern !== 'string') throw new Error('请输入命名模板。');
   const patternIssue = engine.patternError(pattern);
   if (patternIssue) throw new Error(patternIssue);
@@ -20,8 +20,9 @@ export function checkOptions(engine, { pattern, first, last, step, width, height
     if (![width, height].every(n => Number.isInteger(n) && n > 0 && n <= 2147483647)) {
       throw new Error('预期宽高须同时为正整数。');
     }
-    if (!checkPng || !pattern.toLowerCase().endsWith('.png')) {
-      throw new Error('尺寸检查需要启用 PNG 校验，并选择 PNG 命名模板。');
+    const name = pattern.toLowerCase();
+    if (!(name.endsWith('.png') && checkPng) && !(name.endsWith('.exr') && checkExr)) {
+      throw new Error('尺寸检查需要启用 PNG 或 EXR 的文件结构检查。');
     }
   }
 }
@@ -40,8 +41,7 @@ export function readJob(engine, text) {
   return options;
 }
 
-async function inspectPng(engine, entry, expectedSize, options) {
-  const feed = engine.newPngProbeForSize(options.width ?? 0, options.height ?? 0);
+async function inspectImage(feed, entry, expectedSize) {
   let bytesRead = 0;
   for await (const block of entry.blocks()) {
     bytesRead += block.byteLength;
@@ -54,7 +54,8 @@ async function inspectPng(engine, entry, expectedSize, options) {
 
 export async function scanSequence(engine, entries, options, onProgress = () => {}) {
   checkOptions(engine, options);
-  const { pattern, first, last, step, checkPng } = options;
+  const { pattern, first, last, step, checkPng, checkExr = checkPng } = options;
+  const width = options.width ?? 0, height = options.height ?? 0;
   const match = engine.makeMatcher(pattern);
   const frames = [];
   const states = [];
@@ -62,23 +63,32 @@ export async function scanSequence(engine, entries, options, onProgress = () => 
   const problems = new Map();
   let visited = 0;
   let pngChecked = 0;
+  let exrChecked = 0;
   for await (const entry of entries) {
     visited++;
     const frame = match(entry.name);
     if (frame < first || frame > last || (frame - first) % step !== 0) continue;
     onProgress(frames.length, entry.name);
-    let size, reason = '';
+    let state = 0, reason = '';
     try {
-      size = await entry.size();
-      if (size > 0 && checkPng && entry.name.toLowerCase().endsWith('.png')) {
-        reason = await inspectPng(engine, entry, size, options);
+      const size = await entry.size();
+      const name = entry.name.toLowerCase();
+      if (size === 0) {
+        state = 1;
+      } else if (checkPng && name.endsWith('.png')) {
         pngChecked++;
+        reason = await inspectImage(engine.newPngProbeForSize(width, height), entry, size);
+        if (reason) state = 2;
+      } else if (checkExr && name.endsWith('.exr')) {
+        exrChecked++;
+        const diagnostic = await inspectImage(engine.newExrProbe(width, height), entry, size);
+        if (diagnostic) ({ state, reason } = JSON.parse(diagnostic));
       }
     } catch (error) {
       throw new Error('无法完成读取 ' + entry.name + '。' + error.message);
     }
     frames.push(frame);
-    states.push(size === 0 ? 1 : reason ? 2 : 0);
+    states.push(state);
     sources.push(entry.source ?? 0);
     if (reason) problems.set(frames.length - 1, { frame, name: entry.name, reason });
   }
@@ -91,12 +101,14 @@ export async function scanSequence(engine, entries, options, onProgress = () => 
     if (sources[index] && states[index] === 0) overlayReady++;
     if (problems.has(index)) {
       const issue = problems.get(index);
+      if (states[index] === 3) issue.kind = 'unverified';
       if (sources[index]) issue.source = sources[index];
       details.push(issue);
     }
   }
   details.sort((a, b) => a.frame - b.frame);
-  return { format: 'frameledger.report.v1', pattern, check_png: !!checkPng, png_checked: pngChecked, expected_width: options.width ?? null,
+  return { format: report.unverified_count ? 'frameledger.report.v2' : 'frameledger.report.v1',
+    pattern, check_png: !!checkPng, png_checked: pngChecked, check_exr: !!checkExr, exr_checked: exrChecked, expected_width: options.width ?? null,
     expected_height: options.height ?? null, origin: options.origin ?? null, directory_files: visited, extra_copies: frames.length - result.selected.length,
     ready_from_overlay: overlayReady, ...report, details };
 }

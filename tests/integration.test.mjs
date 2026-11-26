@@ -132,8 +132,8 @@ test('unrelated files, out-of-range frames and other formats need no PNG reads',
   const forbidden = () => { throw new Error('unexpected read'); };
   const unrelated = { name: 'shot_0001_L.png', size: forbidden, blocks: forbidden };
   const wrongFrame = { name: 'shot_0012.png', size: forbidden, blocks: forbidden };
-  const exr = { name: 'shot_0001.exr', size: () => 88, blocks: forbidden };
-  const r = await scanSequence(engine, [unrelated, wrongFrame, exr], { ...settings, pattern: 'shot_####.exr' });
+  const jpeg = { name: 'shot_0001.jpg', size: () => 88, blocks: forbidden };
+  const r = await scanSequence(engine, [unrelated, wrongFrame, jpeg], { ...settings, pattern: 'shot_####.jpg' });
   assert.equal(r.ready, 1);
   assert.equal(r.missing_count, 7);
 });

@@ -48,7 +48,7 @@ def describe(scene):
     pattern = pattern_from_scene(scene)
     job = {"format": "frameledger.job.v1", "pattern": pattern, "first": scene.frame_start,
            "last": scene.frame_end, "step": scene.frame_step}
-    if pattern.lower().endswith(".png") and not (render.use_border and render.use_crop_to_border):
+    if pattern.lower().endswith((".png", ".exr")) and not (render.use_border and render.use_crop_to_border):
         job["width"] = max(1, render.resolution_x * render.resolution_percentage // 100)
         job["height"] = max(1, render.resolution_y * render.resolution_percentage // 100)
     if bpy.data.filepath:
