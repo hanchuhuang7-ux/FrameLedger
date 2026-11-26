@@ -1,0 +1,11 @@
+{
+  "name": "frameledger-local",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "moon build --target js --release && node tools/package.mjs",
+    "test": "moon test --target js && node --test tests/integration.test.mjs"
+  }
+}
