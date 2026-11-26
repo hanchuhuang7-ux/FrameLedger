@@ -1,0 +1,9 @@
+{
+  "format": "frameledger.job.v1",
+  "pattern": "shot_####.png",
+  "first": 1,
+  "last": 8,
+  "step": 1,
+  "width": 64,
+  "height": 48
+}

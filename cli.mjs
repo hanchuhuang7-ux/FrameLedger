@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 import { createReadStream } from 'node:fs';
-import { opendir, stat } from 'node:fs/promises';
+import { opendir, readFile, stat } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import * as engine from './dist/engine.mjs';
-import { formatSpans, parseSize, scanSequence } from './app/scan.mjs';
+import { formatSpans, parseSize, readJob, scanSequence } from './app/scan.mjs';
 
 const usage = '用法：node cli.mjs <目录> <命名模板> <起始帧> <结束帧> [--step 整数] [--size 宽x高] [--overlay 补帧目录] [--fast] [--json]\n' +
   '示例：node cli.mjs examples/interrupted "shot_####.png" 1 8\n' +
+  '读取 Blender 镜头设置：node cli.mjs <目录> --job <镜头.json> [--overlay 补帧目录] [--json]\n' +
   '默认读取 PNG 各块并核对 CRC。--fast 仅按文件存在和大小检查。\n' +
   '退出码 0 表示齐全，1 表示需要补渲染，2 表示参数或读取出错。';
 
@@ -39,12 +40,16 @@ async function main(args) {
     console.log(usage);
     return 0;
   }
-  if (args.length < 4) throw new Error(usage);
-  const [directory, pattern, first, last, ...flags] = args;
-  const options = { pattern, first: parseInteger(first), last: parseInteger(last), step: 1, checkPng: true };
+  const [directory, pattern, first, last] = args;
+  const fromJob = pattern === '--job';
+  if (args.length < (fromJob ? 3 : 4)) throw new Error(usage);
+  const options = fromJob ? readJob(engine, await readFile(first, 'utf8')) :
+    { pattern, first: parseInteger(first), last: parseInteger(last), step: 1, checkPng: true };
+  const flags = args.slice(fromJob ? 3 : 4);
   let json = false;
   const directories = new Set([resolve(directory)]);
   for (let i = 0; i < flags.length; i++) {
+    if (fromJob && ['--step', '--size'].includes(flags[i])) throw new Error('镜头设置已指定帧段与尺寸。');
     switch (flags[i]) {
       case '--step': options.step = parseInteger(flags[++i]); break;
       case '--size': {

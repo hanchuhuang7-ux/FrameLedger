@@ -5,6 +5,7 @@ let selected = [];
 let overlays = [];
 let sourceLabel = '';
 let lastReport = null;
+let origin = null;
 
 function status(text, error = false) {
   el('status').textContent = text;
@@ -105,6 +106,7 @@ async function run() {
       step: el('step').valueAsNumber,
       checkPng: el('check-png').checked,
       ...parseSize(el('size').value),
+      origin,
     };
     let nextUpdate = 0;
     const report = await scanSequence(engine, entries, options, (count, name) => {
@@ -143,6 +145,7 @@ const demo = JSON.parse(el('demo-data').textContent).map(({ name, data }) => {
 });
 
 function useDemo() {
+  origin = null;
   setSource('Blender 故障示例', demo);
   el('settings').reset();
   return run();
@@ -169,7 +172,28 @@ el('overlay-folder').addEventListener('change', event => {
   status('补帧目录已添加，点击“检查帧序列”查看合并后的结果。');
 });
 el('settings').addEventListener('input', event => {
-  if (event.target.id !== 'folder') invalidate();
+  if (event.target.type === 'file') return;
+  origin = null;
+  invalidate();
+});
+el('import-job').addEventListener('click', () => {
+  el('job-file').value = '';
+  el('job-file').click();
+});
+el('job-file').addEventListener('change', async event => {
+  const file = event.target.files[0];
+  if (!file) return;
+  try {
+    const job = readJob(engine, await file.text());
+    for (const field of ['pattern', 'first', 'last', 'step']) el(field).value = job[field];
+    el('size').value = job.width ? job.width + 'x' + job.height : '';
+    el('check-png').checked = true;
+    origin = job.origin ?? null;
+    invalidate();
+    status('已导入 ' + file.name + '，点击“检查帧序列”核对所选目录。');
+  } catch (error) {
+    status(error.message, true);
+  }
 });
 el('settings').addEventListener('submit', event => { event.preventDefault(); run(); });
 el('use-demo').addEventListener('click', useDemo);

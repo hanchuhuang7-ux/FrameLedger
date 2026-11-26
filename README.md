@@ -25,6 +25,15 @@ node cli.mjs examples/interrupted "shot_####.png" 2 8 --step 2 --json
 
 ## 检查规则
 
+### 从 Blender 读取镜头设置
+
+在项目根目录运行下面两条命令，可直接使用场景的输出文件名、首尾帧、步长及 PNG 渲染尺寸。网页也可通过「导入镜头设置」读取同一个 JSON。导出器面向场景的单视图主图像序列。裁剪渲染会省略预期尺寸。镜头设置不包含原始目录路径，来自已保存场景的设置会带有文件摘要和场景名。
+
+```sh
+blender --background shot.blend --python-exit-code 7 --python blender/shot_settings.py -- shot.json
+node cli.mjs renders --job shot.json --json
+```
+
 交付前可指定 PNG 输出分辨率。例如 `node cli.mjs examples/interrupted "shot_####.png" 1 8 --size 64x48`。即使预览图有完整的 PNG 结构和正确的 CRC，分辨率与镜头计划不符也会列入补渲染清单。
 
 另一个 MoonBit 工程可以导入本库，用 `FramePattern::parse` 匹配通道，逐帧调用 `AuditSession::observe`，随时通过 `report()` 获取当前补帧区间。`moon run examples/library --target js` 会运行一个左右眼分开命名、步长为 2 的镜头示例。

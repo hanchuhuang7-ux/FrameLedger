@@ -26,6 +26,20 @@ export function checkOptions(engine, { pattern, first, last, step, width, height
   }
 }
 
+export function readJob(engine, text) {
+  const job = JSON.parse(text.replace(/^\uFEFF/, ''));
+  if (job?.format !== 'frameledger.job.v1') throw new Error('请选择 FrameLedger v1 镜头设置文件。');
+  const options = { pattern: job.pattern, first: job.first, last: job.last, step: job.step, checkPng: true };
+  if (job.width != null || job.height != null) Object.assign(options, { width: job.width, height: job.height });
+  if (job.origin != null) {
+    if (typeof job.origin.scene !== 'string' || !job.origin.scene || typeof job.origin.blend_sha256 !== 'string' ||
+        !/^[a-f0-9]{64}$/.test(job.origin.blend_sha256)) throw new Error('镜头设置内的 Blender 场景标识无效。');
+    options.origin = { scene: job.origin.scene, blend_sha256: job.origin.blend_sha256 };
+  }
+  checkOptions(engine, options);
+  return options;
+}
+
 async function inspectPng(engine, entry, expectedSize, options) {
   const feed = engine.newPngProbeForSize(options.width ?? 0, options.height ?? 0);
   let bytesRead = 0;
@@ -83,7 +97,7 @@ export async function scanSequence(engine, entries, options, onProgress = () => 
   }
   details.sort((a, b) => a.frame - b.frame);
   return { pattern, check_png: !!checkPng, png_checked: pngChecked, expected_width: options.width ?? null,
-    expected_height: options.height ?? null, directory_files: visited, extra_copies: frames.length - result.selected.length,
+    expected_height: options.height ?? null, origin: options.origin ?? null, directory_files: visited, extra_copies: frames.length - result.selected.length,
     ready_from_overlay: overlayReady, ...report, details };
 }
 
