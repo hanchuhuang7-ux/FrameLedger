@@ -8,7 +8,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $project = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $destination = [System.IO.Directory]::CreateDirectory($OutputDirectory).FullName
-$scratchBase = [System.IO.Directory]::CreateDirectory($ScratchParent).FullName
+$scratchBase = [System.IO.Path]::TrimEndingDirectorySeparator([System.IO.Directory]::CreateDirectory($ScratchParent).FullName)
 $scratchName = 'frameledger-release-' + [guid]::NewGuid().ToString('N')
 $scratch = [System.IO.Directory]::CreateDirectory((Join-Path $scratchBase $scratchName)).FullName
 $npmBin = if ($IsWindows) { 'npm.cmd' } else { 'npm' }

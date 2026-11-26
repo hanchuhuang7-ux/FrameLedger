@@ -25,3 +25,41 @@ jobs:
           echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
       - run: moon version --all
       - run: npm run verify
+
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Install MoonBit
+        run: |
+          curl --fail --silent --show-error --location https://cli.moonbitlang.com/install/unix.sh --output "$RUNNER_TEMP/moon-install.sh"
+          bash "$RUNNER_TEMP/moon-install.sh"
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+      - name: Build and verify release assets
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($env:GITHUB_REF_NAME -ne "v$version") { throw 'Version tag and package version differ.' }
+          ./tools/release.ps1 -OutputDirectory "$env:RUNNER_TEMP/frameledger-assets" -ScratchParent "$env:RUNNER_TEMP/frameledger-build"
+      - name: Publish checked assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          assets="$RUNNER_TEMP/frameledger-assets"
+          if ! gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "FrameLedger $GITHUB_REF_NAME" --notes "Offline browser tool, source, CLI, and reproducible Blender validation fixtures."
+          fi
+          if [ "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')" = true ]; then
+            gh release upload "$GITHUB_REF_NAME" "$assets/FrameLedger.html" "$assets/FrameLedger-${GITHUB_REF_NAME#v}.zip" --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
+          fi

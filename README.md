@@ -1,14 +1,27 @@
 # FrameLedger · 渲染帧检查器
 
+A MoonBit library and offline tool for auditing image sequences, stereo deliveries and Blender recovery jobs.
+
 动画渲染中断后，文件夹里的图片数量不足以确定从哪一帧继续。FrameLedger 按镜头计划检查 PNG、单层和多层扫描线 EXR，列出缺失、空文件、结构异常和交付规格不符的帧。Blender 可以按清单补图，两个目录可以一起验收。浏览器和命令行共用同一份 MoonBit 核心。
 
 ## 直接使用
 
-双击 `dist/FrameLedger.html`。默认的 EXR 示例有 5 个计划帧。第 1、2 帧通过，第 3 帧被截断，第 4 帧为需要复核的 tiled 图，第 5 帧缺失。补渲染清单为 3、5。点击「PNG 示例」可以切换到包含空文件的八帧镜头。单文件网页内含程序和两组样本。
+双击 `dist/FrameLedger.html`。GitHub 发行版也提供可单独下载的离线网页。默认示例来自 Blender 的两个相机位置，8 对图像中有 5 对齐全。查看左右眼可分别看到需要重跑的帧。另有 PNG 中断示例及包含截断文件、tiled 文件的 EXR 示例。[下载发行版](https://github.com/hanchuhuang7-ux/FrameLedger/releases)
 
 1. 点击「选择文件夹」，选中存放单个镜头序列的目录。程序只检查第一层的文件。
 2. 按场景的输出设置填写命名模板、首尾帧和步长。例如 `shot_####.png` 对应 `shot_0001.png`。请使用原计划的结束帧，以便发现中断后缺失的尾段。
 3. 点击「检查帧序列」。补渲染清单把相邻的问题帧合并。可展开文件诊断，也可点击「导出 JSON」保存报告。
+
+### 双目与其他成组交付
+
+若左右眼、遮罩或其他输出须一起交付，在网页选择共同的根目录，导入 `frameledger.delivery.v1` 清单。各组可指定自己的子目录、命名模板、尺寸及必需 EXR 通道，使用共同的起止帧和步长。文件路径以选择的根目录为基准。`examples/stereo-job.json` 是可直接运行的例子。
+
+```sh
+node cli.mjs examples/delivery --job examples/stereo-job.json
+node cli.mjs examples/delivery --job examples/stereo-job.json --only 左眼 --output left-audit.json
+```
+
+整套通过数要求同一帧的所有必需输出通过。汇总对多个输出中的相同问题帧去重。单组报告保留自己的缺失、异常和待复核清单。「仅待复核」表示该帧的其他输出均未发现需要重跑的故障。对某个输出补图时使用它自己的报告。若希望把单组报告直接交给 Blender，需保留对应已保存场景导出的 `origin`。补帧根目录应保持相同的子目录结构。
 
 ### 命令行
 
