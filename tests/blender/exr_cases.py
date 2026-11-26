@@ -15,7 +15,8 @@ def decode(path):
         for part in image.parts:
             if not part.channels or any(ch.pixels.shape != (37, 43) for ch in part.channels.values()):
                 raise RuntimeError("Invalid reference decode for " + path.name)
-        return {"dimensions": [image.parts[0].width(), image.parts[0].height()], "parts": len(image.parts),
+        lo, hi = image.parts[0].header["displayWindow"]
+        return {"dimensions": [int(hi[0] - lo[0] + 1), int(hi[1] - lo[1] + 1)], "parts": len(image.parts),
                 "channels": sum(len(part.channels) for part in image.parts)}
 
 
@@ -59,6 +60,14 @@ def generate(root):
         image.write(str(deep))
     for layout, path in (("tiled", tile), ("deep", deep)):
         manifest.append({"name": path.name, "layout": layout, **decode(path)})
+    cropped = generated / "cropped-decreasing.exr"
+    def box(x0, y0, x1, y1):
+        return np.array([x0, y0], dtype=np.int32), np.array([x1, y1], dtype=np.int32)
+    header = {"dataWindow": box(-11, 20, 31, 56), "displayWindow": box(-22, -9, 78, 69),
+              "lineOrder": OpenEXR.DECREASING_Y, "compression": OpenEXR.ZIP_COMPRESSION}
+    with OpenEXR.File(header, {"Z": np.arange(43 * 37, dtype=np.float32).reshape(37, 43)}) as image:
+        image.write(str(cropped))
+    manifest.append({"name": cropped.name, "layout": "offset-window", **decode(cropped)})
     shutil.copyfile(generated / "flat-ZIP-16.exr", demo / "shot_0001.exr")
     multilayer = generated / "multipart-ZIP-32.exr"
     shutil.copyfile(multilayer, demo / "shot_0002.exr")
