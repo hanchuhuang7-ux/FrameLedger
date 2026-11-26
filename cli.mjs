@@ -2,12 +2,13 @@
 import { mkdtemp, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, extname, resolve, join } from 'node:path';
 import * as engine from './dist/engine.mjs';
-import { filesIn } from './app/directory.mjs';
-import { formatSpans, parseSize, readJob, scanSequence } from './app/scan.mjs';
+import { deliveryFiles, filesIn } from './app/directory.mjs';
+import { formatSpans, parseSize, readPlan, scanDelivery, scanSequence } from './app/scan.mjs';
 
 const usage = '用法：node cli.mjs <目录> <命名模板> <起始帧> <结束帧> [--step 整数] [--size 宽x高] [--overlay 补帧目录] [--fast] [--json]\n' +
   '示例：node cli.mjs examples/interrupted "shot_####.png" 1 8\n' +
   '读取 Blender 镜头设置：node cli.mjs <目录> --job <镜头.json> [--overlay 补帧目录] [--output 报告.json] [--json]\n' +
+  '检查成组交付：node cli.mjs <根目录> --job <交付清单.json> [--only 输出名称] [--json]\n' +
   '默认检查 PNG 的 CRC 和 EXR 扫描线区块。用 --require-channel 通道名指定必需 EXR 通道，可重复。--fast 仅清点非空文件。\n' +
   '退出码 0 表示按所选模式通过，1 表示需要补渲染，2 表示参数或读取出错，3 表示只剩待复核帧。';
 
@@ -53,11 +54,13 @@ async function main(args) {
   const [directory, pattern, first, last] = args;
   const fromJob = pattern === '--job';
   if (args.length < (fromJob ? 3 : 4)) throw new Error(usage);
-  const options = fromJob ? readJob(engine, await readFile(first, 'utf8')) :
+  const options = fromJob ? readPlan(engine, await readFile(first, 'utf8')) :
     { pattern, first: parseInteger(first), last: parseInteger(last), step: 1, checkPng: true };
+  const delivery = options.format === 'frameledger.delivery.v1';
   const flags = args.slice(fromJob ? 3 : 4);
   let json = false;
   let output;
+  let only, fast = false;
   const directories = new Set([resolve(directory)]);
   for (let i = 0; i < flags.length; i++) {
     if (fromJob && ['--step', '--size'].includes(flags[i])) throw new Error('镜头设置已指定帧段与尺寸。');
@@ -69,8 +72,13 @@ async function main(args) {
         Object.assign(options, parseSize(size));
         break;
       }
-      case '--fast': options.checkPng = false; break;
+      case '--fast': fast = true; if (!delivery) options.checkPng = false; break;
+      case '--only':
+        only = flags[++i];
+        if (!delivery || !only) throw new Error('--only 需要交付清单和输出名称。');
+        break;
       case '--require-channel': {
+        if (delivery) throw new Error('请在对应输出的镜头设置中填写必需通道。');
         const name = flags[++i];
         if (!name || name.startsWith('--')) throw new Error('--require-channel 需要一个完整的 EXR 通道名。');
         (options.exrChannels ??= []).push(name);
@@ -90,10 +98,20 @@ async function main(args) {
       default: throw new Error('未知参数 ' + flags[i] + '\n' + usage);
     }
   }
-  const result = await scanSequence(engine, combinedFiles([...directories]), options);
+  const result = delivery
+    ? await scanDelivery(engine, options, dir => deliveryFiles([...directories], dir), { only, fast })
+    : await scanSequence(engine, combinedFiles([...directories]), options);
   if (output) await saveReport(output, result, fromJob ? first : null);
   if (json) {
     console.log(JSON.stringify(result, null, 2));
+  } else if (result.format === 'frameledger.delivery-report.v1') {
+    console.log('整套通过 ' + result.ready + ' / ' + result.expected + ' 帧');
+    for (const { id, report } of result.outputs) {
+      console.log(id + '  通过 ' + report.ready + '/' + report.expected +
+        '  需补 ' + formatSpans(report.rerender, report.step) + '  待复核 ' + formatSpans(report.unverified, report.step));
+    }
+    console.log('至少一组需补  ' + formatSpans(result.rerender, result.step));
+    console.log('仅待复核  ' + formatSpans(result.review_only, result.step));
   } else {
     console.log('可用 ' + result.ready + ' / ' + result.expected + ' 帧');
     if (directories.size > 1) console.log('由补帧目录提供 ' + result.ready_from_overlay + ' 帧');

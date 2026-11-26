@@ -1,0 +1,10 @@
+{
+  "format": "frameledger.delivery.v1",
+  "first": 1,
+  "last": 8,
+  "step": 1,
+  "outputs": [
+    { "id": "左眼", "directory": "left", "pattern": "eye_####.png", "width": 80, "height": 54 },
+    { "id": "右眼", "directory": "right", "pattern": "eye_####.png", "width": 80, "height": 54 }
+  ]
+}

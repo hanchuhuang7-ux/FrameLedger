@@ -267,6 +267,16 @@ input[type=text],input[type=number],textarea {
 .result-list {
   margin: 0;
 }
+.delivery-line {
+  display: grid;
+  grid-template-columns: minmax(65px, .55fr) minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border-top: 1px solid var(--line);
+  padding: 10px 0;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
 .result-list div {
   display: grid;
   grid-template-columns: 90px minmax(0,1fr) 60px;
@@ -391,13 +401,15 @@ input[type=text],input[type=number],textarea {
 <h2 id="input-title">检查哪组帧</h2>
 <form id="settings">
 <fieldset id="controls">
-<div class="files"><button type="button" id="choose">选择文件夹</button><button class="link" type="button" id="use-demo">PNG 示例</button><button class="link" type="button" id="exr-demo">EXR 示例</button></div>
+<div class="files"><button type="button" id="choose">选择文件夹</button><button class="link" type="button" id="use-demo">PNG 示例</button><button class="link" type="button" id="exr-demo">EXR 示例</button><button class="link" type="button" id="stereo-demo">双目示例</button></div>
 <input id="folder" type="file" webkitdirectory multiple hidden>
 <p id="source" class="source"></p>
 <button class="link" type="button" id="add-overlay">添加补帧目录</button>
 <input id="overlay-folder" type="file" webkitdirectory multiple hidden>
-<button class="link" type="button" id="import-job">导入镜头设置</button>
+<button class="link" type="button" id="import-job">导入镜头或交付清单</button>
 <input id="job-file" type="file" accept=".json,application/json" hidden>
+<div id="delivery-settings" hidden><p id="delivery-plan" class="source"></p><button type="button" class="link" id="single-mode">返回单序列设置</button></div>
+<fieldset id="single-settings">
 <div class="form-section"><label for="pattern">命名模板</label><input id="pattern" type="text" value="shot_####.png" required spellcheck="false"><p class="hint">用 # 表示帧号位数。例如 shot_####.png 匹配 shot_0001.png。</p></div>
 <div class="numbers"><label>起始帧<input id="first" type="number" value="1" min="-1000000000" max="1000000000" required></label><label>结束帧<input id="last" type="number" value="8" min="-1000000000" max="1000000000" required></label><label>步长<input id="step" type="number" value="1" min="1" max="1000000000" required></label></div>
 <label class="check"><input id="check-png" type="checkbox" checked>检查 PNG 和 EXR 文件结构</label>
@@ -405,6 +417,7 @@ input[type=text],input[type=number],textarea {
 <p class="hint">PNG 核对 CRC。EXR 核对扫描线区块，深度和分块格式单列待复核。</p>
 <details class="details"><summary>EXR 必需通道（可选）</summary>
 <label for="exr-channels">每行一个完整通道名</label><textarea id="exr-channels" rows="3" placeholder="ViewLayer.Depth.Z" spellcheck="false"></textarea></details>
+</fieldset>
 <button class="primary" type="submit">检查帧序列</button>
 </fieldset></form>
 <p class="status" id="status" role="status" aria-live="polite"></p>
@@ -412,21 +425,24 @@ input[type=text],input[type=number],textarea {
 <section class="panel" id="results" aria-labelledby="result-title">
 <div class="summary"><div><h2 id="result-title">可用帧</h2><p class="total"><span id="ready">—</span> <small>/ <span id="expected">—</span></small></p></div><button type="button" id="export" disabled>导出 JSON</button></div>
 <p id="scope" class="scope"></p><div class="map" id="frame-map" aria-hidden="true"></div>
-<dl class="result-list">
+<button id="back-to-delivery" class="link" type="button" hidden>返回整套汇总</button>
+<div id="delivery-outputs" hidden></div>
+<dl class="result-list" id="single-breakdown">
 <div><dt><i class="swatch"></i>缺帧</dt><dd class="range" id="missing">—</dd><dd id="missing-count"></dd></div>
 <div><dt><i class="swatch empty-color"></i>空文件</dt><dd class="range" id="empty">—</dd><dd id="empty-count"></dd></div>
 <div><dt><i class="swatch damaged-color"></i>文件异常</dt><dd class="range" id="damaged">—</dd><dd id="damaged-count"></dd></div>
 <div id="review-row" hidden><dt><i class="swatch review-color"></i>待复核</dt><dd class="range" id="unverified">—</dd><dd id="unverified-count"></dd></div>
 </dl>
-<div class="repair"><h2>需要补渲染的帧号</h2><div class="range" id="rerender">—</div></div>
+<p id="delivery-review" class="source" hidden></p>
+<div class="repair"><h2 id="repair-title">需要补渲染的帧号</h2><div class="range" id="rerender">—</div></div>
 <details id="details" class="details" hidden><summary>查看文件诊断</summary><ul id="issues"></ul></details>
 </section></div>
 </main>
-<footer class="bottom">所选文件仅在当前浏览器内读取。检查范围为所选目录的第一层。</footer>
+<footer class="bottom">文件在当前浏览器内读取。单序列检查所选目录，交付清单检查各组指定的子目录。</footer>
 <script id="demo-data" type="application/json">{{DEMO}}</script>
 <script type="module">
 import * as engine from "{{ENGINE}}";
-import { scanSequence, formatSpans, parseSize, readJob } from "{{SHARED}}";
+import { scanSequence, scanDelivery, formatSpans, parseSize, readPlan } from "{{SHARED}}";
 {{PAGE_JS}}
 </script>
 <!-- {{NOTICE}} -->

@@ -21,6 +21,10 @@ const demo = {
   png: { label: 'Blender PNG 示例', pattern: 'shot_####.png', last: 8, files: await sampleFiles('examples/interrupted') },
   exr: { label: 'Blender EXR 示例', pattern: 'shot_####.exr', last: 5, files: await sampleFiles('examples/exr') },
 };
+const stereoPlan = JSON.parse(await read('examples/stereo-job.json'));
+const stereoFiles = await Promise.all(stereoPlan.outputs.map(async output =>
+  (await sampleFiles('examples/delivery/' + output.directory)).map(file => ({ ...file, directory: output.directory }))));
+demo.stereo = { label: 'Blender 双目示例', plan: stereoPlan, files: stereoFiles.flat() };
 const moduleUrl = source => 'data:text/javascript;base64,' + Buffer.from(source).toString('base64');
 const parts = {
   VERSION: version,

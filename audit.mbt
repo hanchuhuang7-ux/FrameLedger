@@ -1,5 +1,5 @@
 ///|
-#derive(Eq, ToJson)
+#derive(Eq, ToJson, FromJson)
 pub(all) struct Span {
   first : Int32
   last : Int32

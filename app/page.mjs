@@ -6,6 +6,8 @@ let overlays = [];
 let sourceLabel = '';
 let lastReport = null;
 let origin = null;
+let deliveryPlan = null;
+let deliveryReport = null;
 
 function status(text, error = false) {
   el('status').textContent = text;
@@ -44,7 +46,15 @@ function buildMap(report) {
   }
 }
 
-function show(report) {
+function show(report, groupId) {
+  el('single-breakdown').hidden = false;
+  el('delivery-outputs').hidden = true;
+  el('delivery-review').hidden = true;
+  el('frame-map').hidden = false;
+  el('back-to-delivery').hidden = !deliveryReport;
+  el('result-title').textContent = groupId ? groupId + ' · 可用帧' : '可用帧';
+  el('repair-title').textContent = '需要补渲染的帧号';
+  el('export').textContent = '导出 JSON';
   el('results').hidden = false;
   el('ready').textContent = numberFormat.format(report.ready);
   el('expected').textContent = numberFormat.format(report.expected);
@@ -78,24 +88,64 @@ function show(report) {
   lastReport = report;
 }
 
+function showDelivery(result) {
+  deliveryReport = result;
+  lastReport = result;
+  el('results').hidden = false;
+  el('single-breakdown').hidden = true;
+  el('back-to-delivery').hidden = true;
+  el('frame-map').hidden = true;
+  el('details').hidden = true;
+  el('result-title').textContent = '整套交付通过帧';
+  el('ready').textContent = numberFormat.format(result.ready);
+  el('expected').textContent = numberFormat.format(result.expected);
+  el('scope').textContent = sourceLabel + ' · ' + result.outputs.length + ' 组必需输出 · 帧 ' +
+    result.first + ' 至 ' + result.last + ' · 步长 ' + result.step;
+  el('delivery-outputs').hidden = false;
+  el('delivery-outputs').replaceChildren(...result.outputs.map(({ id, report }) => {
+    const row = document.createElement('div');
+    row.className = 'delivery-line';
+    const label = document.createElement('strong'), text = document.createElement('span'), inspect = document.createElement('button');
+    label.textContent = id;
+    text.textContent = '通过 ' + report.ready + '/' + report.expected + ' · 需补 ' + formatSpans(report.rerender, result.step) +
+      (report.unverified_count ? ' · 待复核 ' + formatSpans(report.unverified, result.step) : '');
+    inspect.type = 'button';
+    inspect.className = 'link';
+    inspect.textContent = '查看';
+    inspect.setAttribute('aria-label', '查看' + id + '报告');
+    inspect.addEventListener('click', () => show(report, id));
+    row.append(label, text, inspect);
+    return row;
+  }));
+  el('delivery-review').hidden = !result.unverified_count;
+  el('delivery-review').textContent = '有输出待复核 ' + formatSpans(result.unverified, result.step) +
+    ' · 其中仅待复核 ' + formatSpans(result.review_only, result.step);
+  el('repair-title').textContent = '至少一组需要补渲染的帧号';
+  el('rerender').textContent = formatSpans(result.rerender, result.step);
+  el('export').textContent = '导出整套 JSON';
+  el('export').disabled = false;
+}
+
+function setDelivery(plan) {
+  deliveryPlan = plan;
+  el('single-settings').hidden = !!plan;
+  el('single-settings').disabled = !!plan;
+  el('delivery-settings').hidden = !plan;
+  el('delivery-plan').textContent = plan ? '交付清单 · ' + plan.outputs.map(x => x.id).join('、') : '';
+}
+
 function invalidate() {
   lastReport = null;
+  deliveryReport = null;
   el('results').hidden = true;
   el('export').disabled = true;
   status('参数已修改，点击“检查帧序列”更新结果。');
 }
 
-async function run() {
-  el('controls').disabled = true;
-  el('results').hidden = true;
-  lastReport = null;
-  el('export').disabled = true;
-  status('正在读取文件…');
-  try {
-    const entries = [selected, ...overlays.map(layer => layer.files)].flatMap((files, source) => files.map(file => ({
-      name: file.name,
-      source,
-      size: () => file.size,
+function browserEntries(directory = '.') {
+  return [selected, ...overlays.map(layer => layer.files)].flatMap((files, source) =>
+    files.filter(item => item.directory === directory).map(({ file }) => ({
+      name: file.name, source, size: () => file.size,
       blocks: async function* () {
         const blockSize = 128 * 1024;
         for (let at = 0; at < file.size; at += blockSize) {
@@ -103,6 +153,22 @@ async function run() {
         }
       },
     })));
+}
+
+async function run() {
+  el('controls').disabled = true;
+  el('results').hidden = true;
+  lastReport = null;
+  deliveryReport = null;
+  el('export').disabled = true;
+  status('正在读取文件…');
+  try {
+    if (deliveryPlan) {
+      const result = await scanDelivery(engine, deliveryPlan, browserEntries);
+      showDelivery(result);
+      status('成组检查完成。各组报告可单独查看和导出。');
+      return;
+    }
     const options = {
       pattern: el('pattern').value,
       first: el('first').valueAsNumber,
@@ -114,7 +180,7 @@ async function run() {
       origin,
     };
     let nextUpdate = 0;
-    const report = await scanSequence(engine, entries, options, (count, name) => {
+    const report = await scanSequence(engine, browserEntries(), options, (count, name) => {
       if (performance.now() >= nextUpdate) {
         status('已检查 ' + count + ' 个匹配文件 · ' + name);
         nextUpdate = performance.now() + 100;
@@ -144,7 +210,7 @@ function readFolder(fileList) {
   const files = Array.from(fileList);
   return {
     label: files[0]?.webkitRelativePath.split('/')[0] || '空目录',
-    files: files.filter(file => file.webkitRelativePath.split('/').length <= 2),
+    files: files.map(file => ({ file, directory: file.webkitRelativePath.split('/').slice(1, -1).join('/') || '.' })),
   };
 }
 
@@ -153,11 +219,16 @@ const demos = JSON.parse(el('demo-data').textContent);
 function useDemo(key) {
   origin = null;
   const demo = demos[key];
-  const files = demo.files.map(({ name, data }) => new File([Uint8Array.from(atob(data), c => c.charCodeAt(0))], name));
+  const files = demo.files.map(({ name, data, directory = '.' }) => ({
+    directory, file: new File([Uint8Array.from(atob(data), c => c.charCodeAt(0))], name),
+  }));
   setSource(demo.label, files);
   el('settings').reset();
-  el('pattern').value = demo.pattern;
-  el('last').value = demo.last;
+  setDelivery(demo.plan ? readPlan(engine, JSON.stringify(demo.plan)) : null);
+  if (!deliveryPlan) {
+    el('pattern').value = demo.pattern;
+    el('last').value = demo.last;
+  }
   return run();
 }
 
@@ -194,7 +265,13 @@ el('job-file').addEventListener('change', async event => {
   const file = event.target.files[0];
   if (!file) return;
   try {
-    const job = readJob(engine, await file.text());
+    const job = readPlan(engine, await file.text());
+    setDelivery(job.format === 'frameledger.delivery.v1' ? job : null);
+    if (deliveryPlan) {
+      invalidate();
+      status('已导入 ' + file.name + '，请选择交付根目录并运行检查。');
+      return;
+    }
     for (const field of ['pattern', 'first', 'last', 'step']) el(field).value = job[field];
     el('size').value = job.width ? job.width + 'x' + job.height : '';
     el('check-png').checked = true;
@@ -209,14 +286,17 @@ el('job-file').addEventListener('change', async event => {
 el('settings').addEventListener('submit', event => { event.preventDefault(); run(); });
 el('use-demo').addEventListener('click', () => useDemo('png'));
 el('exr-demo').addEventListener('click', () => useDemo('exr'));
+el('stereo-demo').addEventListener('click', () => useDemo('stereo'));
+el('single-mode').addEventListener('click', () => { setDelivery(null); origin = null; invalidate(); });
+el('back-to-delivery').addEventListener('click', () => { if (deliveryReport) showDelivery(deliveryReport); });
 el('export').addEventListener('click', () => {
   if (!lastReport) return;
   const blob = new Blob([JSON.stringify(lastReport, null, 2) + '\n'], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = 'frameledger-report.json';
+  link.download = lastReport.format === 'frameledger.delivery-report.v1' ? 'frameledger-delivery.json' : 'frameledger-report.json';
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1500);
 });
-await useDemo('exr');
+await useDemo('stereo');

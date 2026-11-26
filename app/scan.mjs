@@ -34,8 +34,7 @@ export function checkOptions(engine, { pattern, first, last, step, width, height
   }
 }
 
-export function readJob(engine, text) {
-  const job = JSON.parse(text.replace(/^\uFEFF/, ''));
+function jobOptions(engine, job) {
   if (job?.format !== 'frameledger.job.v1') throw new Error('请选择 FrameLedger v1 镜头设置文件。');
   const options = { pattern: job.pattern, first: job.first, last: job.last, step: job.step, checkPng: true };
   if (job.required_exr_channels !== undefined) options.exrChannels = job.required_exr_channels;
@@ -47,6 +46,56 @@ export function readJob(engine, text) {
   }
   checkOptions(engine, options);
   return options;
+}
+
+export function readJob(engine, text) {
+  return jobOptions(engine, JSON.parse(text.replace(/^\uFEFF/, '')));
+}
+
+function outputDirectory(value = '.') {
+  if (typeof value !== 'string' || !value || value.includes('\0') || /^(?:[\\/]|[A-Za-z]:)/.test(value)) {
+    throw new Error('输出目录须位于所选根目录内。');
+  }
+  const parts = value.replaceAll('\\', '/').split('/');
+  if (parts.includes('..') || parts.some(p => p.includes(':'))) throw new Error('输出目录不能指向上级或其他磁盘。');
+  return parts.filter(p => p && p !== '.').join('/') || '.';
+}
+
+export function readPlan(engine, text) {
+  const plan = JSON.parse(text.replace(/^\uFEFF/, ''));
+  if (plan?.format !== 'frameledger.delivery.v1') return jobOptions(engine, plan);
+  if (!Array.isArray(plan.outputs) || !plan.outputs.length) throw new Error('交付清单至少需要一组输出。');
+  const names = new Set();
+  const outputs = plan.outputs.map(item => {
+    if (!item || typeof item.id !== 'string' || !item.id.trim() || item.id.includes('\0') || names.has(item.id)) {
+      throw new Error('每组输出需要一个非空且唯一的名称。');
+    }
+    names.add(item.id);
+    for (const key of ['first', 'last', 'step']) {
+      if (key in item && item[key] !== plan[key]) throw new Error('同一交付清单的所有输出须使用相同帧段和步长。');
+    }
+    const options = jobOptions(engine, { ...item, format: 'frameledger.job.v1',
+      first: plan.first, last: plan.last, step: plan.step });
+    return { id: item.id, directory: outputDirectory(item.directory), options };
+  });
+  return { format: plan.format, first: plan.first, last: plan.last, step: plan.step, outputs };
+}
+
+export async function scanDelivery(engine, plan, entriesFor, { only, fast = false, progress = () => {} } = {}) {
+  const outputs = only === undefined ? plan.outputs : plan.outputs.filter(group => group.id === only);
+  if (!outputs.length) throw new Error('交付清单中找不到输出 ' + only);
+  const reports = [];
+  for (const group of outputs) {
+    const options = fast ? { ...group.options, checkPng: false, checkExr: false } : group.options;
+    const report = await scanSequence(engine, entriesFor(group.directory), options,
+      (count, name) => progress(group.id, count, name));
+    if (only !== undefined) return report;
+    reports.push({ id: group.id, directory: group.directory, report });
+  }
+  const ranges = reports.map(({ report }) => ({ rerender: report.rerender, unverified: report.unverified }));
+  const summary = JSON.parse(engine.combineDelivery(plan.first, plan.last, plan.step, JSON.stringify(ranges)));
+  if (summary.error) throw new Error(summary.error);
+  return { format: 'frameledger.delivery-report.v1', ...summary, outputs: reports };
 }
 
 async function inspectImage(feed, entry, expectedSize) {
