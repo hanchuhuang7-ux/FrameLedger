@@ -6,7 +6,7 @@ import json
 import os
 from pathlib import Path
 import sys
-import tempfile
+from uuid import uuid4
 
 import bpy
 
@@ -93,10 +93,23 @@ def stage_lock(directory):
         yield
 
 
-def write_state(path, state, scratch):
-    pending = scratch / "state.json"
-    pending.write_text(json.dumps(state, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
-    os.replace(pending, path)
+@contextmanager
+def pending_sibling(target):
+    # A new file in the destination inherits that directory's access rules,
+    # including when Blender runs as a different account from the reviewer.
+    pending = target.parent / (".frameledger-" + uuid4().hex + target.suffix)
+    with pending.open("xb"):
+        pass
+    try:
+        yield pending
+    finally:
+        pending.unlink(missing_ok=True)
+
+
+def write_atomic_text(target, value):
+    with pending_sibling(target) as pending:
+        pending.write_text(value, encoding="utf-8")
+        os.replace(pending, target)
 
 
 def render_plan(scene, job, spans, stage):
@@ -121,39 +134,38 @@ def render_plan(scene, job, spans, stage):
                 raise ValueError("Use an empty directory or a previous FrameLedger staging directory for this shot.")
         settings = scene.render
         old_path, old_ext, old_frame = settings.filepath, settings.use_file_extension, scene.frame_current
-        with tempfile.TemporaryDirectory(dir=stage, prefix=".frameledger-work-") as temp:
-            scratch = Path(temp)
-            if not state_path.exists():
-                write_state(state_path, {"job": job}, scratch)
-            receipts.mkdir(exist_ok=True)
-            try:
-                for lo, hi in spans:
-                    for frame in range(lo, hi + 1, job["step"]):
-                        scene.frame_set(frame)
-                        settings.filepath, settings.use_file_extension = old_path, old_ext
-                        name = Path(settings.frame_path(frame=frame)).name
-                        target = stage / name
-                        receipt = receipts / (str(frame) + ".sha256")
-                        if target.is_symlink() or receipt.is_symlink():
-                            raise ValueError("Cannot use linked staging frame " + name)
-                        if target.exists():
-                            if not receipt.is_file() or receipt.read_text(encoding="ascii").strip() != file_hash(target):
-                                raise ValueError("Unrecognized or changed staging frame " + name)
-                            retained += 1
-                            continue
-                        pending = scratch / name
+        old_overwrite = settings.use_overwrite
+        if not state_path.exists():
+            write_atomic_text(state_path, json.dumps({"job": job}, ensure_ascii=False, sort_keys=True) + "\n")
+        receipts.mkdir(exist_ok=True)
+        try:
+            for lo, hi in spans:
+                for frame in range(lo, hi + 1, job["step"]):
+                    scene.frame_set(frame)
+                    settings.filepath, settings.use_file_extension = old_path, old_ext
+                    name = Path(settings.frame_path(frame=frame)).name
+                    target = stage / name
+                    receipt = receipts / (str(frame) + ".sha256")
+                    if target.is_symlink() or receipt.is_symlink():
+                        raise ValueError("Cannot use linked staging frame " + name)
+                    if target.exists():
+                        if not receipt.is_file() or receipt.read_text(encoding="ascii").strip() != file_hash(target):
+                            raise ValueError("Unrecognized or changed staging frame " + name)
+                        retained += 1
+                        continue
+                    with pending_sibling(target) as pending:
                         settings.filepath, settings.use_file_extension = str(pending), False
+                        settings.use_overwrite = True
                         result = bpy.ops.render.render(write_still=True, scene=scene.name)
                         if "FINISHED" not in result or not pending.is_file() or pending.stat().st_size == 0:
                             raise RuntimeError("Blender failed at frame " + str(frame))
-                        pending_digest = scratch / "frame.sha256"
-                        pending_digest.write_text(file_hash(pending) + "\n", encoding="ascii")
-                        os.replace(pending_digest, receipt)
+                        write_atomic_text(receipt, file_hash(pending) + "\n")
                         os.replace(pending, target)
                         rendered += 1
-            finally:
-                settings.filepath, settings.use_file_extension = old_path, old_ext
-                scene.frame_set(old_frame)
+        finally:
+            settings.filepath, settings.use_file_extension = old_path, old_ext
+            settings.use_overwrite = old_overwrite
+            scene.frame_set(old_frame)
     return rendered, retained
 
 

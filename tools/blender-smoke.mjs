@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repo = fileURLToPath(new URL('../', import.meta.url));
@@ -62,6 +62,23 @@ async function snapshot(directory) {
   return Promise.all(files.map(async name => [name, await digest(join(directory, name))]));
 }
 
+// Compare published files with an ordinary sibling created by the same process.
+// Windows' native ACL export is UTF-16LE and contains name / SDDL pairs.
+async function checkWindowsOutputAccess(directory, targets, label) {
+  const probe = join(directory, '.frameledger-access-probe');
+  await writeFile(probe, '', { flag: 'wx' });
+  try {
+    const dump = here('access-' + label + '.txt');
+    run('icacls.exe', [join(directory, '*'), '/save', dump, '/Q']);
+    const lines = (await readFile(dump)).toString('utf16le').replace(/^\uFEFF/, '').trimEnd().split(/\r?\n/);
+    const rules = new Map();
+    for (let i = 0; i + 1 < lines.length; i += 2) rules.set(basename(lines[i]), lines[i + 1]);
+    const standard = rules.get(basename(probe));
+    assert.ok(standard, 'Missing inherited ACL for access probe');
+    for (const name of targets) assert.equal(rules.get(name), standard, 'Directory inheritance: ' + name);
+  } finally { await unlink(probe); }
+}
+
 const settings = here('shot.json'), beforePath = here('before.json'), stage = here('repaired');
 run(binary, [...base, '--factory-startup', ...py, fixture, '--', 'create', root]);
 const sceneHash = await digest(scene);
@@ -81,6 +98,11 @@ const apply = (...flags) => record(run(binary, [...repair, beforePath, stage, ..
 assert.equal(apply('--dry-run').rendered, 0);
 const recovered = apply();
 assert.equal(recovered.rendered, 22);
+if (process.platform === 'win32') {
+  const receiptDir = join(stage, '.frameledger-receipts');
+  await checkWindowsOutputAccess(stage, (await readdir(stage)).filter(n => n.endsWith('.png') || n.endsWith('.json')), 'frames');
+  await checkWindowsOutputAccess(receiptDir, await readdir(receiptDir), 'receipts');
+}
 const retry = apply();
 assert.equal(retry.retained, 22);
 assert.equal(retry.rendered, 0);
@@ -107,6 +129,7 @@ const summary = { blender: pixels.blender, expected: final.expected, ready_at_in
   first_missing: before.rerender[0].first, last_missing: before.rerender[0].last, step: before.step,
   repaired: recovered.rendered, retained_on_retry: retry.retained, ready_after: final.ready,
   primary_sha256_unchanged: beforeHashes.length, scene_sha256_unchanged: true,
-  pixel_identical_to_uninterrupted: pixels.frames, distinct_reference_images: pixels.different_images };
+  pixel_identical_to_uninterrupted: pixels.frames, distinct_reference_images: pixels.different_images,
+  windows_directory_access_verified: process.platform === 'win32' ? true : null };
 await writeFile(here('verification.json'), JSON.stringify(summary, null, 2) + '\n');
 console.log(JSON.stringify(summary, null, 2), '\n' + root);

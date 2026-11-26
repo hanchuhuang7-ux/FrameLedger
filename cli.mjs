@@ -104,7 +104,7 @@ async function main(args) {
   } else {
     console.log('可用 ' + result.ready + ' / ' + result.expected + ' 帧');
     if (directories.size > 1) console.log('由补帧目录提供 ' + result.ready_from_overlay + ' 帧');
-    for (const [label, key] of [['缺帧', 'missing'], ['空文件', 'empty'], ['PNG 损坏', 'damaged'], ['补渲染', 'rerender']]) {
+    for (const [label, key] of [['缺帧', 'missing'], ['空文件', 'empty'], ['PNG 异常', 'damaged'], ['补渲染', 'rerender']]) {
       const summary = key === 'damaged' && result.png_checked === 0
         ? (result.check_png ? '没有可检查的 PNG' : '未启用')
         : formatSpans(result[key], result.step);
