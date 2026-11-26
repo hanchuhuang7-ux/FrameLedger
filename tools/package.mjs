@@ -4,6 +4,9 @@ import { resolve, join } from 'node:path';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const read = name => readFile(join(root, name), 'utf8');
+const { version } = JSON.parse(await read('package.json'));
+const moonVersion = /^version\s*=\s*"([^"]+)"/m.exec(await read('moon.mod'))?.[1];
+if (!/^\d+\.\d+\.\d+$/.test(version) || version !== moonVersion) throw new Error('Release versions do not match.');
 const engine = await read('_build/js/release/build/frameledger.js');
 const [shared, page, script, license, notice] = await Promise.all([
   read('app/scan.mjs'), read('app/page.html'), read('app/page.mjs'), read('LICENSE'), read('third-party/MoonBit-core-LICENSE.txt'),
@@ -14,6 +17,7 @@ const demo = await Promise.all((await readdir(dir)).sort().map(async name => ({
 })));
 const moduleUrl = source => 'data:text/javascript;base64,' + Buffer.from(source).toString('base64');
 const parts = {
+  VERSION: version,
   ENGINE: moduleUrl(engine), SHARED: moduleUrl(shared), PAGE_JS: script,
   DEMO: JSON.stringify(demo), NOTICE: license + '\nIncludes compiled portions of MoonBit Core, copyright International Digital Economy Academy and contributors.\n' + notice,
 };

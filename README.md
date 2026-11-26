@@ -1,6 +1,6 @@
 # FrameLedger · 渲染帧检查器
 
-动画渲染中断后，文件夹里的图片数量不足以确定从哪一帧继续。FrameLedger 读取一个镜头的命名模板、预期帧段和步长，给出缺失、空文件和 PNG 损坏的位置，并合并成补渲染清单。核心算法使用 MoonBit，浏览器与命令行共用同一份实现。
+动画渲染中断后，文件夹里的图片数量不足以确定从哪一帧继续。FrameLedger 按镜头计划查出缺帧、空文件、PNG 损坏和尺寸错误，把需要重跑的帧写成清单。Blender 可以按清单补图，原目录和补帧目录可一起验收。核心算法使用 MoonBit，浏览器与命令行共用同一份实现。
 
 ## 直接使用
 
@@ -73,6 +73,8 @@ node cli.mjs ./clean-frames "shot_####.png" 1 8
 ## 实现与来源
 
 真实渲染的中断、补帧、重试及完整渲染的像素对照结果见[渲染恢复验证](evidence/validation.md)，另附一个已暂停生产镜头的只读检查结果。
+
+使用 PowerShell 7 在 Git 工作副本中运行 `./tools/release.ps1 -OutputDirectory ./release`，可从当前提交重新生成离线网页、完整源码及本地 Git 历史包。脚本在临时目录重新构建与运行测试，再解压交付包逐文件校验。压缩包中的 `development-history.bundle` 可通过 `git clone development-history.bundle frameledger-source` 还原为 Git 工作副本。
 
 `sequence.mbt` 解析模板和有符号帧号，`audit.mbt` 汇总间隙与文件状态，`png.mbt` 维护跨读取块的 PNG 校验状态。`app/scan.mjs` 将两个用户入口接到同一份 MoonBit 核心。项目由 Codex 辅助实现和验证，示例场景由仓库内脚本生成。
 
