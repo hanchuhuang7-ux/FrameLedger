@@ -23,8 +23,9 @@ pub fn audit_copies(
   }
   let best : Map[Int32, Int32] = Map([])
   let copies : Map[(Int32, Int32), Int32] = Map([])
-  // Keep a damaged diagnostic in preference to an empty file when no copy is ready.
-  let ranks : FixedArray[Int32] = [0, 2, 1]
+  // A copy that requires review could still be usable. Do not schedule it
+  // for replacement solely because another copy was positively diagnosed.
+  let ranks : FixedArray[Int32] = [0, 3, 2, 1]
   for i in 0..<frames.length() {
     let frame = frames[i]
     if !scan.includes(frame) {
@@ -32,7 +33,7 @@ pub fn audit_copies(
     }
     let state = states[i]
     let source = sources[i]
-    guard state >= 0 && state <= 2 && source >= 0 else {
+    guard state >= 0 && state < ranks.length() && source >= 0 else {
       raise InvalidInput("无效的候选帧记录。")
     }
     let key = (frame, source)
@@ -55,7 +56,8 @@ pub fn audit_copies(
     let state = match states[i] {
       0 => Ready
       1 => Empty
-      _ => Damaged
+      2 => Damaged
+      _ => NeedsReview
     }
     scan.observe(frames[i], state)
   }

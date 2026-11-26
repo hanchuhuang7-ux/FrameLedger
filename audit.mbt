@@ -16,9 +16,11 @@ pub(all) struct Report {
   missing_count : Int32
   empty_count : Int32
   damaged_count : Int32
+  unverified_count : Int32
   missing : Array[Span]
   empty : Array[Span]
   damaged : Array[Span]
+  unverified : Array[Span]
   rerender : Array[Span]
 }
 
@@ -56,6 +58,7 @@ pub(all) enum FrameState {
   Ready
   Empty
   Damaged
+  NeedsReview
 }
 
 ///|
@@ -113,9 +116,11 @@ pub fn AuditSession::report(self : AuditSession) -> Report {
   let missing : Array[Span] = []
   let empty : Array[Span] = []
   let damaged : Array[Span] = []
+  let unverified : Array[Span] = []
   let rerender : Array[Span] = []
   let mut empty_count = 0
   let mut damaged_count = 0
+  let mut unverified_count = 0
   let mut cursor = first
   for frame in ordered {
     if cursor < frame {
@@ -133,6 +138,10 @@ pub fn AuditSession::report(self : AuditSession) -> Report {
         add_span(damaged, frame, frame, step)
         add_span(rerender, frame, frame, step)
       }
+      NeedsReview => {
+        unverified_count += 1
+        add_span(unverified, frame, frame, step)
+      }
       Ready => ()
     }
     cursor = frame + step
@@ -146,13 +155,15 @@ pub fn AuditSession::report(self : AuditSession) -> Report {
     last,
     step,
     expected,
-    ready: ordered.length() - empty_count - damaged_count,
+    ready: ordered.length() - empty_count - damaged_count - unverified_count,
     missing_count: expected - ordered.length(),
     empty_count,
     damaged_count,
+    unverified_count,
     missing,
     empty,
     damaged,
+    unverified,
     rerender,
   }
 }
@@ -178,6 +189,7 @@ pub fn audit(
       0 => Ready
       1 => Empty
       2 => Damaged
+      3 => NeedsReview
       _ => raise InvalidInput("未知文件状态。")
     }
     session.observe(frames[i], state)
