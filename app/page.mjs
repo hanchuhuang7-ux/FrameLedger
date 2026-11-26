@@ -101,6 +101,7 @@ async function run() {
       last: el('last').valueAsNumber,
       step: el('step').valueAsNumber,
       checkPng: el('check-png').checked,
+      ...parseSize(el('size').value),
     };
     let nextUpdate = 0;
     const report = await scanSequence(engine, entries, options, (count, name) => {

@@ -9,6 +9,9 @@ priv enum Phase {
 
 ///|
 priv struct PngReader {
+  ihdr : FixedArray[Byte]
+  expected_width : Int32
+  expected_height : Int32
   mut phase : Phase
   mut position : Int32
   mut length : Int32
@@ -20,6 +23,39 @@ priv struct PngReader {
   mut nonempty_data : Bool
   mut data_ended : Bool
   mut error : String
+}
+
+///|
+fn png_dimension(header : FixedArray[Byte], at : Int32) -> Int32 {
+  (header[at].to_int() << 24) |
+  (header[at + 1].to_int() << 16) |
+  (header[at + 2].to_int() << 8) |
+  header[at + 3].to_int()
+}
+
+///|
+fn PngReader::check_ihdr(self : PngReader) -> String {
+  let width = png_dimension(self.ihdr, 0)
+  let height = png_dimension(self.ihdr, 4)
+  guard width > 0 && height > 0 else {
+    return "PNG 尺寸不符合 IHDR 规范。"
+  }
+  let depth = self.ihdr[8].to_int()
+  let valid_depth = match self.ihdr[9].to_int() {
+    0 => depth == 1 || depth == 2 || depth == 4 || depth == 8 || depth == 16
+    3 => depth == 1 || depth == 2 || depth == 4 || depth == 8
+    2 | 4 | 6 => depth == 8 || depth == 16
+    _ => false
+  }
+  guard valid_depth else { return "PNG 的色型与位深组合无效。" }
+  guard self.ihdr[10] == 0 && self.ihdr[11] == 0 && self.ihdr[12] <= 1 else {
+    return "PNG 的压缩、过滤或隔行参数无效。"
+  }
+  if self.expected_width > 0 &&
+    (width != self.expected_width || height != self.expected_height) {
+    return "像素尺寸为 \{width}×\{height}，计划要求 \{self.expected_width}×\{self.expected_height}。"
+  }
+  ""
 }
 
 ///|
@@ -124,6 +160,11 @@ fn PngReader::feed(self : PngReader, input : Bytes, eof : Bool) -> String {
       Payload => {
         let count = (self.length - self.position).min(input.length() - offset)
         let end = offset + count
+        if self.kind == Ihdr {
+          for i in 0..<count {
+            self.ihdr[self.position + i] = input[offset + i]
+          }
+        }
         let mut crc = self.crc
         for i in offset..<end {
           crc = update_crc(crc, input[i])
@@ -143,6 +184,8 @@ fn PngReader::feed(self : PngReader, input : Bytes, eof : Bool) -> String {
         if self.position == 4 {
           if self.stored_crc != (self.crc ^ 0xffffffffU) {
             self.error = "PNG 块 CRC 校验失败。"
+          } else if self.kind == Ihdr {
+            self.error = self.check_ihdr()
           }
           self.phase = if self.kind == Iend { Done } else { Header }
           self.position = 0
@@ -170,7 +213,21 @@ fn PngReader::feed(self : PngReader, input : Bytes, eof : Bool) -> String {
 /// The empty string means no structural or CRC error has been found.
 #export_name("newPngProbe")
 pub fn new_png_probe() -> (Bytes, Bool) -> String {
+  new_png_probe_for_size(0, 0)
+}
+
+///|
+/// Width and height select the render's output contract. A 0×0 contract
+/// performs PNG structural checks at any legal size.
+#export_name("newPngProbeForSize")
+pub fn new_png_probe_for_size(
+  width : Int32,
+  height : Int32,
+) -> (Bytes, Bool) -> String {
   let reader : PngReader = {
+    ihdr: FixedArray::make(13, 0),
+    expected_width: width,
+    expected_height: height,
     phase: Signature,
     position: 0,
     length: 0,
@@ -181,7 +238,11 @@ pub fn new_png_probe() -> (Bytes, Bool) -> String {
     seen_data: false,
     nonempty_data: false,
     data_ended: false,
-    error: "",
+    error: if (width == 0 && height == 0) || (width > 0 && height > 0) {
+      ""
+    } else {
+      "预期宽高必须同时为正整数。"
+    },
   }
   fn(input, eof) { reader.feed(input, eof) }
 }

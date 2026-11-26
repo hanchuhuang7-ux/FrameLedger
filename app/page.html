@@ -394,6 +394,7 @@ input[type=text],input[type=number] {
 <div class="form-section"><label for="pattern">命名模板</label><input id="pattern" type="text" value="shot_####.png" required spellcheck="false"><p class="hint">用 # 表示帧号位数。例如 shot_####.png 匹配 shot_0001.png。</p></div>
 <div class="numbers"><label>起始帧<input id="first" type="number" value="1" min="-1000000000" max="1000000000" required></label><label>结束帧<input id="last" type="number" value="8" min="-1000000000" max="1000000000" required></label><label>步长<input id="step" type="number" value="1" min="1" max="1000000000" required></label></div>
 <label class="check"><input id="check-png" type="checkbox" checked>逐块核对 PNG 的 CRC</label>
+<label class="form-section" for="size">预期 PNG 尺寸（可选）</label><input id="size" type="text" placeholder="例如 1920x1080" spellcheck="false">
 <p class="hint">EXR 等其他格式按文件是否存在、是否为空检查。</p>
 <button class="primary" type="submit">检查帧序列</button>
 </fieldset></form>
@@ -405,7 +406,7 @@ input[type=text],input[type=number] {
 <dl class="result-list">
 <div><dt><i class="swatch"></i>缺帧</dt><dd class="range" id="missing">—</dd><dd id="missing-count"></dd></div>
 <div><dt><i class="swatch empty-color"></i>空文件</dt><dd class="range" id="empty">—</dd><dd id="empty-count"></dd></div>
-<div><dt><i class="swatch damaged-color"></i>PNG 损坏</dt><dd class="range" id="damaged">—</dd><dd id="damaged-count"></dd></div>
+<div><dt><i class="swatch damaged-color"></i>PNG 异常</dt><dd class="range" id="damaged">—</dd><dd id="damaged-count"></dd></div>
 </dl>
 <div class="repair"><h2>需要补渲染的帧号</h2><div class="range" id="rerender">—</div></div>
 <details id="details" class="details" hidden><summary>查看文件诊断</summary><ul id="issues"></ul></details>
@@ -415,7 +416,7 @@ input[type=text],input[type=number] {
 <script id="demo-data" type="application/json">{{DEMO}}</script>
 <script type="module">
 import * as engine from "{{ENGINE}}";
-import { scanSequence, formatSpans } from "{{SHARED}}";
+import { scanSequence, formatSpans, parseSize } from "{{SHARED}}";
 {{PAGE_JS}}
 </script>
 <!-- {{NOTICE}} -->

@@ -23,6 +23,8 @@ node cli.mjs examples/interrupted "shot_####.png" 2 8 --step 2 --json
 
 ## 检查规则
 
+交付前可指定 PNG 输出分辨率。例如 `node cli.mjs examples/interrupted "shot_####.png" 1 8 --size 64x48`。即使预览图有完整的 PNG 结构和正确的 CRC，分辨率与镜头计划不符也会列入补渲染清单。
+
 另一个 MoonBit 工程可以导入本库，用 `FramePattern::parse` 匹配通道，逐帧调用 `AuditSession::observe`，随时通过 `report()` 获取当前补帧区间。`moon run examples/library --target js` 会运行一个左右眼分开命名、步长为 2 的镜头示例。
 
 - 一组连续的 `#` 指定最小数字位数，前后文字逐字匹配。`shot_###_L.png` 可匹配 `shot_-003_L.png` 和 `shot_1000_L.png`。正负号之外的数字位数须符合模板，左右眼和不同输出通道可分别检查。

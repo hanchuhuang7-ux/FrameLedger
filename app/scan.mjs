@@ -1,4 +1,11 @@
-export function checkOptions(engine, { pattern, first, last, step }) {
+export function parseSize(text) {
+  if (!text) return {};
+  const match = /^([1-9]\d*)\s*[x×X]\s*([1-9]\d*)$/.exec(text.trim());
+  if (!match) throw new Error('请输入像素尺寸，例如 1920x1080。');
+  return { width: Number(match[1]), height: Number(match[2]) };
+}
+
+export function checkOptions(engine, { pattern, first, last, step, width, height, checkPng }) {
   if (typeof pattern !== 'string') throw new Error('请输入命名模板。');
   const patternIssue = engine.patternError(pattern);
   if (patternIssue) throw new Error(patternIssue);
@@ -9,10 +16,18 @@ export function checkOptions(engine, { pattern, first, last, step }) {
   }
   const rangeIssue = engine.rangeError(first, last, step);
   if (rangeIssue) throw new Error(rangeIssue);
+  if (width != null || height != null) {
+    if (![width, height].every(n => Number.isInteger(n) && n > 0 && n <= 2147483647)) {
+      throw new Error('预期宽高须同时为正整数。');
+    }
+    if (!checkPng || !pattern.toLowerCase().endsWith('.png')) {
+      throw new Error('尺寸检查需要启用 PNG 校验，并选择 PNG 命名模板。');
+    }
+  }
 }
 
-async function inspectPng(engine, entry, expectedSize) {
-  const feed = engine.newPngProbe();
+async function inspectPng(engine, entry, expectedSize, options) {
+  const feed = engine.newPngProbeForSize(options.width ?? 0, options.height ?? 0);
   let bytesRead = 0;
   for await (const block of entry.blocks()) {
     bytesRead += block.byteLength;
@@ -41,7 +56,7 @@ export async function scanSequence(engine, entries, options, onProgress = () => 
     try {
       size = await entry.size();
       if (size > 0 && checkPng && entry.name.toLowerCase().endsWith('.png')) {
-        reason = await inspectPng(engine, entry, size);
+        reason = await inspectPng(engine, entry, size, options);
         pngChecked++;
       }
     } catch (error) {
@@ -54,7 +69,8 @@ export async function scanSequence(engine, entries, options, onProgress = () => 
   const report = JSON.parse(engine.auditFrames(first, last, step, frames, states));
   if (report.error) throw new Error(report.error);
   details.sort((a, b) => a.frame - b.frame);
-  return { pattern, check_png: !!checkPng, png_checked: pngChecked, directory_files: visited, ...report, details };
+  return { pattern, check_png: !!checkPng, png_checked: pngChecked, expected_width: options.width ?? null,
+    expected_height: options.height ?? null, directory_files: visited, ...report, details };
 }
 
 export function formatSpans(spans, step) {

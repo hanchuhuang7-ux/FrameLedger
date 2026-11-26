@@ -3,9 +3,9 @@ import { createReadStream } from 'node:fs';
 import { opendir, stat } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import * as engine from './dist/engine.mjs';
-import { formatSpans, scanSequence } from './app/scan.mjs';
+import { formatSpans, parseSize, scanSequence } from './app/scan.mjs';
 
-const usage = '用法：node cli.mjs <目录> <命名模板> <起始帧> <结束帧> [--step 整数] [--fast] [--json]\n' +
+const usage = '用法：node cli.mjs <目录> <命名模板> <起始帧> <结束帧> [--step 整数] [--size 宽x高] [--fast] [--json]\n' +
   '示例：node cli.mjs examples/interrupted "shot_####.png" 1 8\n' +
   '默认读取 PNG 各块并核对 CRC。--fast 仅按文件存在和大小检查。\n' +
   '退出码 0 表示齐全，1 表示需要补渲染，2 表示参数或读取出错。';
@@ -39,6 +39,12 @@ async function main(args) {
   for (let i = 0; i < flags.length; i++) {
     switch (flags[i]) {
       case '--step': options.step = parseInteger(flags[++i]); break;
+      case '--size': {
+        const size = flags[++i];
+        if (!size) throw new Error('--size 需要宽x高。');
+        Object.assign(options, parseSize(size));
+        break;
+      }
       case '--fast': options.checkPng = false; break;
       case '--json': json = true; break;
       default: throw new Error('未知参数 ' + flags[i] + '\n' + usage);

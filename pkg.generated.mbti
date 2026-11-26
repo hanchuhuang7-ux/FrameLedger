@@ -1,0 +1,76 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "hanchuhuang7-ux/frameledger"
+
+import {
+  "moonbitlang/core/json",
+}
+
+// Values
+pub fn audit(Int32, Int32, Int32, FixedArray[Int32], FixedArray[Int32]) -> Report raise InputError
+
+pub fn audit_frames(Int32, Int32, Int32, FixedArray[Int32], FixedArray[Int32]) -> String
+
+pub fn make_matcher(String) -> (String) -> Int32
+
+pub fn new_png_probe() -> (Bytes, Bool) -> String
+
+pub fn new_png_probe_for_size(Int32, Int32) -> (Bytes, Bool) -> String
+
+pub fn pattern_error(String) -> String
+
+pub fn range_error(Int32, Int32, Int32) -> String
+
+// Errors
+pub suberror InputError {
+  InvalidInput(String)
+}
+
+// Types and methods
+pub struct AuditSession {
+  // private fields
+}
+pub fn AuditSession::includes(Self, Int32) -> Bool
+pub fn AuditSession::new(Int32, Int32, step? : Int32) -> Self raise InputError
+pub fn AuditSession::observe(Self, Int32, FrameState) -> Unit raise InputError
+pub fn AuditSession::report(Self) -> Report
+
+pub struct FramePattern {
+  prefix : String
+  suffix : String
+  width : Int32
+}
+pub fn FramePattern::frame(Self, String) -> Int32?
+pub fn FramePattern::parse(String) -> Self raise InputError
+
+#derive(Eq)
+pub(all) enum FrameState {
+  Ready
+  Empty
+  Damaged
+}
+
+#derive(@json.ToJson)
+pub(all) struct Report {
+  first : Int32
+  last : Int32
+  step : Int32
+  expected : Int32
+  ready : Int32
+  missing_count : Int32
+  empty_count : Int32
+  damaged_count : Int32
+  missing : Array[Span]
+  empty : Array[Span]
+  damaged : Array[Span]
+  rerender : Array[Span]
+}
+
+#derive(Eq, @json.ToJson)
+pub(all) struct Span {
+  first : Int32
+  last : Int32
+}
+
+// Type aliases
+
+// Traits

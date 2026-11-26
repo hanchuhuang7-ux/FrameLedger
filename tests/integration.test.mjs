@@ -52,6 +52,25 @@ test('intact endpoints do not hide a flipped IDAT payload bit', () => {
   assert.match(check(changed, 11), /CRC/);
 });
 
+test('a checksum-correct IHDR still needs legal dimensions, colour and methods', () => {
+  for (const [at, value, message] of [[0, 128, /尺寸/], [8, 3, /位深/], [9, 5, /色型/], [11, 1, /过滤/], [12, 3, /隔行/]]) {
+    const header = Buffer.from(picture.subarray(16, 29));
+    header[at] = value;
+    const image = Buffer.concat([picture.subarray(0, 8), pngChunk('IHDR', header), picture.subarray(33)]);
+    assert.match(check(image, 1), message);
+  }
+});
+
+test('the shot size contract catches otherwise intact PNGs at the CLI', () => {
+  const args = ['examples/interrupted', 'shot_####.png', '1', '1'];
+  assert.equal(cli(...args, '--size', '64x48').status, 0);
+  const wrong = cli(...args, '--size', '128x96', '--json');
+  assert.equal(wrong.status, 1);
+  assert.match(JSON.parse(wrong.stdout).details[0].reason, /64×48.*128×96/);
+  assert.equal(cli(...args, '--size', '64x48', '--fast').status, 2);
+  assert.equal(cli(...args, '--size', '20x0').status, 2);
+});
+
 test('truncated files, invalid signatures, overlong chunks and trailing data are diagnosed', () => {
   assert.match(check(picture.subarray(0, -5)), /IEND/);
   assert.match(check(Buffer.from('not a png')), /签名/);
