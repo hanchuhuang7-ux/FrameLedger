@@ -44,7 +44,8 @@ export async function scanSequence(engine, entries, options, onProgress = () => 
   const match = engine.makeMatcher(pattern);
   const frames = [];
   const states = [];
-  const details = [];
+  const sources = [];
+  const problems = new Map();
   let visited = 0;
   let pngChecked = 0;
   for await (const entry of entries) {
@@ -64,13 +65,26 @@ export async function scanSequence(engine, entries, options, onProgress = () => 
     }
     frames.push(frame);
     states.push(size === 0 ? 1 : reason ? 2 : 0);
-    if (reason) details.push({ frame, name: entry.name, reason });
+    sources.push(entry.source ?? 0);
+    if (reason) problems.set(frames.length - 1, { frame, name: entry.name, reason });
   }
-  const report = JSON.parse(engine.auditFrames(first, last, step, frames, states));
-  if (report.error) throw new Error(report.error);
+  const result = JSON.parse(engine.auditCopies(first, last, step, frames, states, sources));
+  if (result.error) throw new Error(result.error);
+  const report = result.report;
+  const details = [];
+  let overlayReady = 0;
+  for (const index of result.selected) {
+    if (sources[index] && states[index] === 0) overlayReady++;
+    if (problems.has(index)) {
+      const issue = problems.get(index);
+      if (sources[index]) issue.source = sources[index];
+      details.push(issue);
+    }
+  }
   details.sort((a, b) => a.frame - b.frame);
   return { pattern, check_png: !!checkPng, png_checked: pngChecked, expected_width: options.width ?? null,
-    expected_height: options.height ?? null, directory_files: visited, ...report, details };
+    expected_height: options.height ?? null, directory_files: visited, extra_copies: frames.length - result.selected.length,
+    ready_from_overlay: overlayReady, ...report, details };
 }
 
 export function formatSpans(spans, step) {

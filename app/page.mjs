@@ -2,6 +2,7 @@ const el = id => document.getElementById(id);
 const categories = ['missing', 'empty', 'damaged'];
 const numberFormat = new Intl.NumberFormat('zh-CN');
 let selected = [];
+let overlays = [];
 let sourceLabel = '';
 let lastReport = null;
 
@@ -45,7 +46,8 @@ function show(report) {
   el('results').hidden = false;
   el('ready').textContent = numberFormat.format(report.ready);
   el('expected').textContent = numberFormat.format(report.expected);
-  el('scope').textContent = sourceLabel + ' · 帧 ' + report.first + ' 至 ' + report.last + ' · 步长 ' + report.step;
+  el('scope').textContent = sourceLabel + ' · 帧 ' + report.first + ' 至 ' + report.last + ' · 步长 ' + report.step +
+    (overlays.length ? ' · 补帧目录提供 ' + report.ready_from_overlay + ' 帧' : '');
   for (const category of categories) {
     el(category).textContent = formatSpans(report[category], report.step);
     el(category + '-count').textContent = numberFormat.format(report[category + '_count']) + ' 帧';
@@ -85,8 +87,9 @@ async function run() {
   el('export').disabled = true;
   status('正在读取文件…');
   try {
-    const entries = selected.map(file => ({
+    const entries = [selected, ...overlays.map(layer => layer.files)].flatMap((files, source) => files.map(file => ({
       name: file.name,
+      source,
       size: () => file.size,
       blocks: async function* () {
         const blockSize = 128 * 1024;
@@ -94,7 +97,7 @@ async function run() {
           yield new Uint8Array(await file.slice(at, at + blockSize).arrayBuffer());
         }
       },
-    }));
+    })));
     const options = {
       pattern: el('pattern').value,
       first: el('first').valueAsNumber,
@@ -121,8 +124,17 @@ async function run() {
 
 function setSource(label, files) {
   selected = files;
+  overlays = [];
   sourceLabel = label;
   el('source').textContent = label + ' · ' + files.length + ' 个文件';
+}
+
+function readFolder(fileList) {
+  const files = Array.from(fileList);
+  return {
+    label: files[0]?.webkitRelativePath.split('/')[0] || '空目录',
+    files: files.filter(file => file.webkitRelativePath.split('/').length <= 2),
+  };
 }
 
 const demo = JSON.parse(el('demo-data').textContent).map(({ name, data }) => {
@@ -141,15 +153,20 @@ el('choose').addEventListener('click', () => {
   el('folder').click();
 });
 el('folder').addEventListener('change', event => {
-  const all = Array.from(event.target.files);
-  if (all.length === 0) {
-    setSource('空目录', []);
-  } else {
-    const direct = all.filter(file => file.webkitRelativePath.split('/').length <= 2);
-    setSource(all[0].webkitRelativePath.split('/')[0] || '本地目录', direct);
-  }
+  const folder = readFolder(event.target.files);
+  setSource(folder.label, folder.files);
   invalidate();
   status('已选择目录，请核对命名模板和计划帧段，再开始检查。');
+});
+el('add-overlay').addEventListener('click', () => {
+  el('overlay-folder').value = '';
+  el('overlay-folder').click();
+});
+el('overlay-folder').addEventListener('change', event => {
+  overlays.push(readFolder(event.target.files));
+  el('source').textContent = [sourceLabel, ...overlays.map(layer => layer.label)].join(' + ');
+  invalidate();
+  status('补帧目录已添加，点击“检查帧序列”查看合并后的结果。');
 });
 el('settings').addEventListener('input', event => {
   if (event.target.id !== 'folder') invalidate();

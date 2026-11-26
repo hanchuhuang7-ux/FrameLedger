@@ -391,6 +391,8 @@ input[type=text],input[type=number] {
 <div class="files"><button type="button" id="choose">选择文件夹</button><button class="link" type="button" id="use-demo">使用示例</button></div>
 <input id="folder" type="file" webkitdirectory multiple hidden>
 <p id="source" class="source"></p>
+<button class="link" type="button" id="add-overlay">添加补帧目录</button>
+<input id="overlay-folder" type="file" webkitdirectory multiple hidden>
 <div class="form-section"><label for="pattern">命名模板</label><input id="pattern" type="text" value="shot_####.png" required spellcheck="false"><p class="hint">用 # 表示帧号位数。例如 shot_####.png 匹配 shot_0001.png。</p></div>
 <div class="numbers"><label>起始帧<input id="first" type="number" value="1" min="-1000000000" max="1000000000" required></label><label>结束帧<input id="last" type="number" value="8" min="-1000000000" max="1000000000" required></label><label>步长<input id="step" type="number" value="1" min="1" max="1000000000" required></label></div>
 <label class="check"><input id="check-png" type="checkbox" checked>逐块核对 PNG 的 CRC</label>

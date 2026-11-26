@@ -8,6 +8,10 @@ import {
 // Values
 pub fn audit(Int32, Int32, Int32, FixedArray[Int32], FixedArray[Int32]) -> Report raise InputError
 
+pub fn audit_copies(Int32, Int32, Int32, FixedArray[Int32], FixedArray[Int32], FixedArray[Int32]) -> CopyAudit raise InputError
+
+pub fn audit_copies_json(Int32, Int32, Int32, FixedArray[Int32], FixedArray[Int32], FixedArray[Int32]) -> String
+
 pub fn audit_frames(Int32, Int32, Int32, FixedArray[Int32], FixedArray[Int32]) -> String
 
 pub fn make_matcher(String) -> (String) -> Int32
@@ -33,6 +37,12 @@ pub fn AuditSession::includes(Self, Int32) -> Bool
 pub fn AuditSession::new(Int32, Int32, step? : Int32) -> Self raise InputError
 pub fn AuditSession::observe(Self, Int32, FrameState) -> Unit raise InputError
 pub fn AuditSession::report(Self) -> Report
+
+#derive(@json.ToJson)
+pub(all) struct CopyAudit {
+  report : Report
+  selected : Array[Int32]
+}
 
 pub struct FramePattern {
   prefix : String
