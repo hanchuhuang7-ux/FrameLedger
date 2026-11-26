@@ -72,6 +72,8 @@ node cli.mjs ./clean-frames "shot_####.png" 1 8
 
 ## 实现与来源
 
+真实渲染的中断、补帧、重试及完整渲染的像素对照结果见[渲染恢复验证](evidence/validation.md)，另附一个已暂停生产镜头的只读检查结果。
+
 `sequence.mbt` 解析模板和有符号帧号，`audit.mbt` 汇总间隙与文件状态，`png.mbt` 维护跨读取块的 PNG 校验状态。`app/scan.mjs` 将两个用户入口接到同一份 MoonBit 核心。项目由 Codex 辅助实现和验证，示例场景由仓库内脚本生成。
 
 命名和步长参考 Blender 的图像序列工作流程。PNG 检查依据 W3C 规范。[Blender 动画渲染手册](https://docs.blender.org/manual/en/latest/render/output/animation.html) · [W3C PNG 规范](https://www.w3.org/TR/png-3/)
