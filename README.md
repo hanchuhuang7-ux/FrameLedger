@@ -1,10 +1,10 @@
 # FrameLedger · 渲染帧检查器
 
-动画渲染中断后，文件夹里的图片数量不足以确定从哪一帧继续。FrameLedger 按镜头计划查出缺帧、空文件、PNG 损坏和尺寸错误，把需要重跑的帧写成清单。Blender 可以按清单补图，原目录和补帧目录可一起验收。核心算法使用 MoonBit，浏览器与命令行共用同一份实现。
+动画渲染中断后，文件夹里的图片数量不足以确定从哪一帧继续。FrameLedger 按镜头计划检查 PNG、单层和多层扫描线 EXR，列出缺失、空文件、结构异常和交付规格不符的帧。Blender 可以按清单补图，两个目录可以一起验收。浏览器和命令行共用同一份 MoonBit 核心。
 
 ## 直接使用
 
-双击 `dist/FrameLedger.html`。页面首先显示一个用 Blender 5.3 实际渲染的故障示例。8 帧里有 5 帧通过检查，第 3 帧缺失，第 5 帧是零字节占位文件，第 7 帧被截断。单文件网页内含程序和示例，所选图片在浏览器内读取。
+双击 `dist/FrameLedger.html`。默认的 EXR 示例有 5 个计划帧。第 1、2 帧通过，第 3 帧被截断，第 4 帧为需要复核的 tiled 图，第 5 帧缺失。补渲染清单为 3、5。点击「PNG 示例」可以切换到包含空文件的八帧镜头。单文件网页内含程序和两组样本。
 
 1. 点击「选择文件夹」，选中存放单个镜头序列的目录。程序只检查第一层的文件。
 2. 按场景的输出设置填写命名模板、首尾帧和步长。例如 `shot_####.png` 对应 `shot_0001.png`。请使用原计划的结束帧，以便发现中断后缺失的尾段。
@@ -19,20 +19,30 @@
 ```sh
 node cli.mjs examples/interrupted "shot_####.png" 1 8
 node cli.mjs examples/interrupted "shot_####.png" 2 8 --step 2 --json
+node cli.mjs examples/exr --job examples/exr-shot.json --json
 ```
 
-第一条返回补渲染帧号 3、5、7，退出码为 1。第二条检查第 2、4、6、8 帧，退出码为 0。退出码 2 表示输入或读取出错。`--fast` 仅按文件存在与非空检查，适合先清点大型序列。JSON 的 `png_checked` 是实际进行 PNG 校验的文件数。
+第一条返回补渲染帧号 3、5、7。第二条检查第 2、4、6、8 帧，全部通过。第三条输出多层 EXR 示例报告。退出码 0 表示按所选模式全部通过，1 表示存在要补的帧，2 表示输入或运行出错，3 表示只剩待复核帧。`--fast` 可按非空文件快速清点。JSON 的 `png_checked` 和 `exr_checked` 记录进入相应结构检查并得到结果的文件数。
 
 ## 检查规则
 
 ### 从 Blender 读取镜头设置
 
-在项目根目录运行下面两条命令，可直接使用场景的输出文件名、首尾帧、步长及 PNG 渲染尺寸。网页也可通过「导入镜头设置」读取同一个 JSON。导出器面向场景的单视图主图像序列。裁剪渲染会省略预期尺寸。镜头设置不包含原始目录路径，来自已保存场景的设置会带有文件摘要和场景名。
+在项目根目录运行下面两条命令，可直接使用场景的输出文件名、首尾帧、步长及 PNG 或 EXR 渲染尺寸。网页也可通过「导入镜头设置」读取同一个 JSON。导出器面向场景的单视图主图像序列。裁剪渲染会省略预期尺寸。已保存场景的设置带有文件摘要和场景名。
 
 ```sh
 blender --background shot.blend --python-exit-code 7 --python blender/shot_settings.py -- shot.json
 node cli.mjs renders --job shot.json --json
 ```
+
+若交付要求深度、法线等通道，可在导出镜头时指定一张已经确认正确的参考帧。导出器读取通道名并写入 `required_exr_channels`。扫描工具核对每个必需项，允许帧内含有额外通道。补渲染脚本在复用或写入补图前也会核对它们。
+
+```sh
+blender --background shot.blend --python-exit-code 7 --python blender/shot_settings.py -- shot.json --reference-exr known-good.exr
+node cli.mjs renders --job shot.json --output audit.json
+```
+
+也可在网页展开「EXR 必需通道」，每行输入一个名称。命令行可重复使用 `--require-channel`，例如 `node cli.mjs examples/exr "shot_####.exr" 1 2 --require-channel ViewLayer.Depth.Z`。这个例子中尺寸相同的两张 EXR 只有第 2 帧包含所需通道。
 
 ### 只补渲染报告中的帧
 
@@ -50,7 +60,10 @@ node cli.mjs renders --job shot.json --overlay repaired
 
 - 一组连续的 `#` 指定最小数字位数，前后文字逐字匹配。`shot_###_L.png` 可匹配 `shot_-003_L.png` 和 `shot_1000_L.png`。正负号之外的数字位数须符合模板，左右眼和不同输出通道可分别检查。
 - 首尾帧均包含在输入范围内，步长从起始帧起算。如起始为 1、结束为 8、步长为 3，所查帧号为 1、4、7。支持的帧号范围为 −10 亿至 10 亿。
-- PNG 校验以最多 128 KiB 的数据块读取文件，核对文件签名、IHDR 位置和长度、连续的 IDAT、结束块以及各块 CRC。像素解码、视觉质量和颜色正确性需另行检查。EXR、JPEG 等格式只按文件存在与非空检查。
+- PNG 以最多 128 KiB 的块读取，核对签名、IHDR、连续 IDAT、结束块和各块 CRC。JPEG 等其他格式按文件存在与非空检查。
+- EXR 读取版本、必需头属性、通道采样、每个分部的 64 位偏移表、扫描线坐标与数据块边界。尺寸要求按显示窗口计算，数据窗口用来确定实际区块。参考通道按区分大小写的完整名称匹配，支持中文。像素内容或压缩载荷中保持长度的位变化，需要独立解码对照。
+- tiled、deep、未知压缩或超出预算的 EXR 单列待复核。预算为 16 MiB 文件头、每个已解析结构属性 1 MiB、每部 4096 个属性、256 个分部、总计 100 万个区块。单个文件在扫描期间变得不可读，或命令行发现其长度、时间戳或文件标识变化，也会单列复核。
+- 报告有待复核帧或通道约束时使用 `frameledger.report.v2`，其余报告沿用 v1。`unverified` 内的帧可在写入完成后重查或交给相应格式的解码器。`rerender` 只包含已经确认需要重跑的区间。修复工具兼容 0.2.0 的报告和省略 EXR 尺寸的镜头设置。
 - 命令行只扫描当前目录中的普通文件。补帧区间按步长压缩。缺少大段序列时，算法按已有帧排序后找间隙，耗时随实有文件数量变化。
 
 ## 构建与验证
@@ -76,8 +89,8 @@ node cli.mjs ./clean-frames "shot_####.png" 1 8
 
 使用 PowerShell 7 在 Git 工作副本中运行 `./tools/release.ps1 -OutputDirectory ./release`，可从当前提交重新生成离线网页、完整源码及本地 Git 历史包。脚本在临时目录重新构建与运行测试，再解压交付包逐文件校验。压缩包中的 `development-history.bundle` 可通过 `git clone development-history.bundle frameledger-source` 还原为 Git 工作副本。
 
-`sequence.mbt` 解析模板和有符号帧号，`audit.mbt` 汇总间隙与文件状态，`png.mbt` 维护跨读取块的 PNG 校验状态。`app/scan.mjs` 将两个用户入口接到同一份 MoonBit 核心。项目由 Codex 辅助实现和验证，示例场景由仓库内脚本生成。
+`sequence.mbt` 解析模板和有符号帧号，`audit.mbt` 汇总间隙与文件状态，`png.mbt`、`exr.mbt` 和 `exr_header.mbt` 负责流式结构检查。MoonBit 调用者可使用 `ExrProbe::new` 与 `feed`，根据返回值处理通过、异常和待复核结果。项目由 Codex 辅助实现和验证，示例场景由仓库内脚本生成。
 
-命名和步长参考 Blender 的图像序列工作流程。PNG 检查依据 W3C 规范。[Blender 动画渲染手册](https://docs.blender.org/manual/en/latest/render/output/animation.html) · [W3C PNG 规范](https://www.w3.org/TR/png-3/)
+命名和步长参考 Blender 的图像序列工作流程。文件结构检查依据公开规范。EXR 参考样本使用 Blender 和 OpenEXR 官方 Python 模块生成、解码。离线网页和扫描命令本身使用 MoonBit 与宿主内置功能。[Blender 动画渲染手册](https://docs.blender.org/manual/en/latest/render/output/animation.html) · [W3C PNG 规范](https://www.w3.org/TR/png-3/) · [OpenEXR 文件布局](https://openexr.com/en/latest/OpenEXRFileLayout.html) · [OpenEXR Python 模块](https://openexr.com/en/latest/python.html)
 
 项目代码采用 MIT 许可证。编译产物包含 MoonBit 标准库的部分实现，随包保留 Apache 2.0 许可文本。

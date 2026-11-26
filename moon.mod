@@ -1,6 +1,6 @@
 name = "hanchuhuang7-ux/frameledger"
 
-version = "0.2.0"
+version = "0.3.0"
 
 license = "MIT"
 
