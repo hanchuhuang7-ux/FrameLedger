@@ -50,35 +50,62 @@ fn add_span(
 }
 
 ///|
-/// The host provides the file status for each observed frame:
-/// 0 = ready, 1 = zero bytes, 2 = failed the PNG check.
-pub fn audit(
+/// Result of inspecting a single frame file.
+#derive(Eq)
+pub(all) enum FrameState {
+  Ready
+  Empty
+  Damaged
+}
+
+///|
+pub struct AuditSession {
+  priv first : Int32
+  priv last : Int32
+  priv step : Int32
+  priv seen : Map[Int32, FrameState]
+}
+
+///|
+/// Start a sparse audit. The range is inclusive; its first frame anchors the step.
+pub fn AuditSession::new(
   first : Int32,
   last : Int32,
-  step : Int32,
-  frames : FixedArray[Int32],
-  states : FixedArray[Int32],
-) -> Report raise InputError {
+  step~ : Int32 = 1,
+) -> AuditSession raise InputError {
   let message = range_error(first, last, step)
   guard message == "" else { raise InvalidInput(message) }
-  guard frames.length() == states.length() else {
-    raise InvalidInput("每个帧号必须对应一个文件状态。")
+  { first, last, step, seen: Map([]), }
+}
+
+///|
+pub fn AuditSession::includes(self : AuditSession, frame : Int32) -> Bool {
+  frame >= self.first &&
+  frame <= self.last &&
+  (frame - self.first) % self.step == 0
+}
+
+///|
+/// Add an observation in any order. Conflicting observations require the
+/// caller to resolve which file to trust before recording it.
+pub fn AuditSession::observe(
+  self : AuditSession,
+  frame : Int32,
+  state : FrameState,
+) -> Unit raise InputError {
+  if !self.includes(frame) {
+    return
   }
-  let seen : Map[Int32, Int32] = Map([])
-  for i in 0..<frames.length() {
-    let frame = frames[i]
-    if frame < first || frame > last || (frame - first) % step != 0 {
-      continue
-    }
-    let state = states[i]
-    guard state >= 0 && state <= 2 else {
-      raise InvalidInput("未知文件状态。")
-    }
-    if seen.get(frame) is Some(previous) && previous != state {
-      raise InvalidInput("同一帧的两条记录状态冲突。")
-    }
-    seen[frame] = state
+  if self.seen.get(frame) is Some(previous) && previous != state {
+    raise InvalidInput("同一帧的两条记录状态冲突。")
   }
+  self.seen[frame] = state
+}
+
+///|
+/// Obtain an independent snapshot; more observations can be added later.
+pub fn AuditSession::report(self : AuditSession) -> Report {
+  let { first, last, step, seen, } = self
   let ordered = seen.keys().to_array()
   ordered.sort()
   let expected = (last - first) / step + 1
@@ -96,17 +123,17 @@ pub fn audit(
       add_span(rerender, cursor, frame - step, step)
     }
     match seen[frame] {
-      1 => {
+      Empty => {
         empty_count += 1
         add_span(empty, frame, frame, step)
         add_span(rerender, frame, frame, step)
       }
-      2 => {
+      Damaged => {
         damaged_count += 1
         add_span(damaged, frame, frame, step)
         add_span(rerender, frame, frame, step)
       }
-      _ => ()
+      Ready => ()
     }
     cursor = frame + step
   }
@@ -128,6 +155,34 @@ pub fn audit(
     damaged,
     rerender,
   }
+}
+
+///|
+/// Batch adapter retained for hosts using parallel frame and status arrays.
+pub fn audit(
+  first : Int32,
+  last : Int32,
+  step : Int32,
+  frames : FixedArray[Int32],
+  states : FixedArray[Int32],
+) -> Report raise InputError {
+  let session = AuditSession::new(first, last, step~)
+  guard frames.length() == states.length() else {
+    raise InvalidInput("每个帧号必须对应一个文件状态。")
+  }
+  for i in 0..<frames.length() {
+    if !session.includes(frames[i]) {
+      continue
+    }
+    let state = match states[i] {
+      0 => Ready
+      1 => Empty
+      2 => Damaged
+      _ => raise InvalidInput("未知文件状态。")
+    }
+    session.observe(frames[i], state)
+  }
+  session.report()
 }
 
 ///|

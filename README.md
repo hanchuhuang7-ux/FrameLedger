@@ -23,6 +23,8 @@ node cli.mjs examples/interrupted "shot_####.png" 2 8 --step 2 --json
 
 ## 检查规则
 
+另一个 MoonBit 工程可以导入本库，用 `FramePattern::parse` 匹配通道，逐帧调用 `AuditSession::observe`，随时通过 `report()` 获取当前补帧区间。`moon run examples/library --target js` 会运行一个左右眼分开命名、步长为 2 的镜头示例。
+
 - 一组连续的 `#` 指定最小数字位数，前后文字逐字匹配。`shot_###_L.png` 可匹配 `shot_-003_L.png` 和 `shot_1000_L.png`。正负号之外的数字位数须符合模板，左右眼和不同输出通道可分别检查。
 - 首尾帧均包含在输入范围内，步长从起始帧起算。如起始为 1、结束为 8、步长为 3，所查帧号为 1、4、7。支持的帧号范围为 −10 亿至 10 亿。
 - PNG 校验以最多 128 KiB 的数据块读取文件，核对文件签名、IHDR 位置和长度、连续的 IDAT、结束块以及各块 CRC。像素解码、视觉质量和颜色正确性需另行检查。EXR、JPEG 等格式只按文件存在与非空检查。

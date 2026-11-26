@@ -90,3 +90,18 @@ test "streaming PNG retains errors and rejects an unfinished header" {
   assert_true(message.contains("签名"))
   assert_eq(wrong(b"", true), message)
 }
+
+///|
+test "streaming audit reports are independent snapshots" {
+  let scan = AuditSession::new(1, 5, step=2)
+  scan.observe(5, Ready)
+  scan.observe(2, Damaged)
+  let before = scan.report()
+  scan.observe(1, Ready)
+  scan.observe(1, Ready)
+  let after = scan.report()
+  assert_eq(before.ready, 1)
+  assert_eq(before.missing_count, 2)
+  assert_eq(after.ready, 2)
+  assert_eq(after.missing_count, 1)
+}

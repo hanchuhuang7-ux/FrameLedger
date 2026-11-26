@@ -1,0 +1,6 @@
+import {
+  "hanchuhuang7-ux/frameledger" @ledger,
+  "moonbitlang/core/json",
+}
+
+pkgtype(kind: "executable")
