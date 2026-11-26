@@ -1,9 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { appendFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import * as engine from '../dist/engine.mjs';
 import { scanSequence } from '../app/scan.mjs';
+import { filesIn } from '../app/directory.mjs';
 
 const files = await Promise.all([1, 2, 3, 4].map(n => readFile('examples/exr/shot_000' + n + '.exr')));
 const [flat, multipart, cut, tile] = files;
@@ -126,4 +129,50 @@ test('CLI exit codes distinguish faults, review and an explicitly requested fast
   const fast = run('shot_####.exr', '3', '4', '--fast');
   assert.equal(fast.status, 0);
   assert.equal(JSON.parse(fast.stdout).exr_checked, 0);
+});
+
+test('a same-size replacement takes precedence over a transient truncation verdict', async () => {
+  let generation = 0;
+  const changing = { name: 's1.exr', snapshot: () => ({ size: cut.length, revision: ++generation }),
+    blocks: async function* () { yield cut; } };
+  const stable = { name: 's2.exr', snapshot: () => ({ size: flat.length, revision: 'fixed' }),
+    blocks: async function* () { yield flat; } };
+  const r = await scanSequence(engine, [changing, stable],
+    { pattern: 's#.exr', first: 1, last: 2, step: 1, checkPng: true });
+  assert.equal(r.ready, 1);
+  assert.equal(r.damaged_count, 0);
+  assert.equal(r.unverified_count, 1);
+  assert.match(r.details[0].reason, /写入或替换/);
+  assert.deepEqual(r.rerender, []);
+});
+
+test('an inaccessible entry does not suppress the rest of the shot', async () => {
+  const vanished = { name: 's1.png', snapshot: () => { throw Object.assign(new Error('gone'), { code: 'ENOENT' }); } };
+  const locked = { name: 's2.png', size: () => 23,
+    blocks: async function* () { throw Object.assign(new Error('locked'), { name: 'NotReadableError' }); } };
+  const r = await scanSequence(engine, [vanished, locked],
+    { pattern: 's#.png', first: 1, last: 3, step: 1, checkPng: true });
+  assert.deepEqual(r.unverified, [{ first: 1, last: 2 }]);
+  assert.deepEqual(r.rerender, [{ first: 3, last: 3 }]);
+});
+
+test('the CLI file adapter detects an actual write between the two snapshots', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'frameledger-live-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const path = join(dir, 's1.exr');
+  await writeFile(path, flat);
+  async function* changingDirectory() {
+    for await (const entry of filesIn(dir)) {
+      yield { ...entry, blocks: async function* (size) {
+        yield* entry.blocks(size);
+        await appendFile(path, Buffer.from([1]));
+      } };
+    }
+  }
+  const result = await scanSequence(engine, changingDirectory(),
+    { pattern: 's#.exr', first: 1, last: 1, step: 1, checkPng: true });
+  assert.equal(result.unverified_count, 1);
+  assert.equal(result.ready, 0);
+  assert.deepEqual(result.rerender, []);
+  assert.match(result.details[0].reason, /写入/);
 });

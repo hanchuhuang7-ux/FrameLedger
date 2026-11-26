@@ -43,7 +43,7 @@ export function readJob(engine, text) {
 
 async function inspectImage(feed, entry, expectedSize) {
   let bytesRead = 0;
-  for await (const block of entry.blocks()) {
+  for await (const block of entry.blocks(expectedSize)) {
     bytesRead += block.byteLength;
     const issue = feed(block, false);
     if (issue) return issue;
@@ -52,10 +52,44 @@ async function inspectImage(feed, entry, expectedSize) {
   return feed(new Uint8Array(0), true);
 }
 
+function temporarilyUnreadable(error) {
+  return ['ENOENT', 'ESTALE', 'EBUSY', 'EACCES', 'EPERM', 'ELOOP'].includes(error?.code) ||
+    ['NotReadableError', 'NotFoundError', 'NotAllowedError'].includes(error?.name);
+}
+
+async function inspectEntry(engine, entry, options) {
+  const before = entry.snapshot ? await entry.snapshot() : { size: await entry.size() };
+  const size = before.size;
+  if (!Number.isSafeInteger(size) || size < 0) throw new Error('文件长度超出当前平台可处理的范围。');
+  const name = entry.name.toLowerCase();
+  const png = name.endsWith('.png') && options.checkPng;
+  const exr = name.endsWith('.exr') && (options.checkExr ?? options.checkPng);
+  const format = size > 0 && (png || exr) ? (png ? 'png' : 'exr') : null;
+  let state = size === 0 ? 1 : 0, reason = '', readFailure;
+  if (format) {
+    const width = options.width ?? 0, height = options.height ?? 0;
+    try {
+      const feed = png ? engine.newPngProbeForSize(width, height) : engine.newExrProbe(width, height);
+      const diagnostic = await inspectImage(feed, entry, size);
+      if (diagnostic) {
+        if (png) { state = 2; reason = diagnostic; }
+        else ({ state, reason } = JSON.parse(diagnostic));
+      }
+    } catch (error) { readFailure = error; }
+  }
+  if (entry.snapshot && (png || exr)) {
+    const after = await entry.snapshot();
+    if (after.size !== size || after.revision !== before.revision) {
+      return { state: 3, reason: '读取期间文件被写入或替换，请等写入结束后重新检查。', format };
+    }
+  }
+  if (readFailure) throw readFailure;
+  return { state, reason, format };
+}
+
 export async function scanSequence(engine, entries, options, onProgress = () => {}) {
   checkOptions(engine, options);
   const { pattern, first, last, step, checkPng, checkExr = checkPng } = options;
-  const width = options.width ?? 0, height = options.height ?? 0;
   const match = engine.makeMatcher(pattern);
   const frames = [];
   const states = [];
@@ -69,24 +103,16 @@ export async function scanSequence(engine, entries, options, onProgress = () => 
     const frame = match(entry.name);
     if (frame < first || frame > last || (frame - first) % step !== 0) continue;
     onProgress(frames.length, entry.name);
-    let state = 0, reason = '';
+    let finding;
     try {
-      const size = await entry.size();
-      const name = entry.name.toLowerCase();
-      if (size === 0) {
-        state = 1;
-      } else if (checkPng && name.endsWith('.png')) {
-        pngChecked++;
-        reason = await inspectImage(engine.newPngProbeForSize(width, height), entry, size);
-        if (reason) state = 2;
-      } else if (checkExr && name.endsWith('.exr')) {
-        exrChecked++;
-        const diagnostic = await inspectImage(engine.newExrProbe(width, height), entry, size);
-        if (diagnostic) ({ state, reason } = JSON.parse(diagnostic));
-      }
+      finding = await inspectEntry(engine, entry, options);
     } catch (error) {
-      throw new Error('无法完成读取 ' + entry.name + '。' + error.message);
+      if (!temporarilyUnreadable(error)) throw new Error('无法完成读取 ' + entry.name + '。' + error.message);
+      finding = { state: 3, reason: '此文件在检查时无法读取，请确认文件仍可访问后复核。' };
     }
+    const { state, reason, format } = finding;
+    if (format === 'png') pngChecked++;
+    if (format === 'exr') exrChecked++;
     frames.push(frame);
     states.push(state);
     sources.push(entry.source ?? 0);

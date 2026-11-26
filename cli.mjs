@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-import { createReadStream } from 'node:fs';
-import { mkdtemp, opendir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, extname, resolve, join } from 'node:path';
 import * as engine from './dist/engine.mjs';
+import { filesIn } from './app/directory.mjs';
 import { formatSpans, parseSize, readJob, scanSequence } from './app/scan.mjs';
 
 const usage = '用法：node cli.mjs <目录> <命名模板> <起始帧> <结束帧> [--step 整数] [--size 宽x高] [--overlay 补帧目录] [--fast] [--json]\n' +
@@ -14,19 +14,6 @@ const usage = '用法：node cli.mjs <目录> <命名模板> <起始帧> <结束
 function parseInteger(text) {
   if (typeof text !== 'string' || !/^-?\d+$/.test(text)) throw new Error('需要整数帧号或步长。');
   return Number(text);
-}
-
-async function* filesIn(directory, source) {
-  for await (const item of await opendir(directory)) {
-    if (!item.isFile()) continue;
-    const path = join(directory, item.name);
-    yield {
-      name: item.name,
-      source,
-      size: async () => (await stat(path)).size,
-      blocks: () => createReadStream(path, { highWaterMark: 128 * 1024 }),
-    };
-  }
 }
 
 async function* combinedFiles(directories) {
