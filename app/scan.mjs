@@ -96,7 +96,7 @@ export async function scanSequence(engine, entries, options, onProgress = () => 
     }
   }
   details.sort((a, b) => a.frame - b.frame);
-  return { pattern, check_png: !!checkPng, png_checked: pngChecked, expected_width: options.width ?? null,
+  return { format: 'frameledger.report.v1', pattern, check_png: !!checkPng, png_checked: pngChecked, expected_width: options.width ?? null,
     expected_height: options.height ?? null, origin: options.origin ?? null, directory_files: visited, extra_copies: frames.length - result.selected.length,
     ready_from_overlay: overlayReady, ...report, details };
 }

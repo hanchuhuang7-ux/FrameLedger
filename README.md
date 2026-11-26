@@ -34,6 +34,16 @@ blender --background shot.blend --python-exit-code 7 --python blender/shot_setti
 node cli.mjs renders --job shot.json --json
 ```
 
+### 只补渲染报告中的帧
+
+```sh
+node cli.mjs renders --job shot.json --output audit.json
+blender --background --disable-autoexec shot.blend --python-exit-code 7 --python blender/repair.py -- audit.json repaired
+node cli.mjs renders --job shot.json --overlay repaired
+```
+
+第一条命令在发现问题帧时返回 1，报告已经写入磁盘。第二条核对场景摘要、帧段、尺寸与分类计数，然后在独立目录内逐帧渲染。末尾加 `--dry-run` 可预览帧段。每张补图经完整写入后才进入输出目录，同时记录 SHA-256。重跑时，已有且通过摘要核对的补图直接复用。此流程只处理单视图场景的主输出，带有已启用的合成器 File Output 节点的场景需先安排该节点的输出。
+
 交付前可指定 PNG 输出分辨率。例如 `node cli.mjs examples/interrupted "shot_####.png" 1 8 --size 64x48`。即使预览图有完整的 PNG 结构和正确的 CRC，分辨率与镜头计划不符也会列入补渲染清单。
 
 另一个 MoonBit 工程可以导入本库，用 `FramePattern::parse` 匹配通道，逐帧调用 `AuditSession::observe`，随时通过 `report()` 获取当前补帧区间。`moon run examples/library --target js` 会运行一个左右眼分开命名、步长为 2 的镜头示例。

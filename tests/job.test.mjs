@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import * as engine from '../dist/engine.mjs';
 import { readJob } from '../app/scan.mjs';
@@ -22,4 +24,21 @@ test('job import validates the version, whole ranges, dimensions and optional sc
     { origin: { scene: 'Scene', blend_sha256: 'invalid' } }]) {
     assert.throws(() => readJob(engine, JSON.stringify({ ...job, ...patch })));
   }
+});
+
+test('an incomplete audit exports UTF-8 JSON and cannot replace its input job', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'frameledger-job-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const jobPath = join(dir, 'shot.json'), out = join(dir, 'audit.json');
+  const original = JSON.stringify(job);
+  await writeFile(jobPath, original);
+  const args = ['cli.mjs', 'examples/interrupted', '--job', jobPath, '--output'];
+  const written = spawnSync(process.execPath, [...args, out], { encoding: 'utf8' });
+  assert.equal(written.status, 1, written.stderr);
+  const report = JSON.parse(await readFile(out, 'utf8'));
+  assert.equal(report.format, 'frameledger.report.v1');
+  assert.equal(report.rerender.length, 3);
+  const protectedJob = spawnSync(process.execPath, [...args, jobPath], { encoding: 'utf8' });
+  assert.equal(protectedJob.status, 2);
+  assert.equal(await readFile(jobPath, 'utf8'), original);
 });
