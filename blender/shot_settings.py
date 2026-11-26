@@ -43,6 +43,22 @@ def file_hash(path):
     return digest.hexdigest()
 
 
+def exr_channels(path):
+    """Read the channel names of a trusted reference frame; no pixel decode needed."""
+    import OpenEXR
+    names = set()
+    with OpenEXR.File(str(path), header_only=True) as image:
+        for part in image.parts:
+            label = part.header.get("name", "")
+            prefix = label + "." if label else ""
+            for channel in part.header["channels"]:
+                name = channel.name
+                names.add(name if not prefix or name.startswith(prefix) else prefix + name)
+    if not names:
+        raise ValueError("No EXR channels were found in " + str(path))
+    return names
+
+
 def describe(scene):
     render = scene.render
     pattern = pattern_from_scene(scene)
@@ -59,10 +75,15 @@ def describe(scene):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("output", help="destination .json")
+    parser.add_argument("--reference-exr", help="use all named channels in a known-good reference frame")
     args = parser.parse_args(sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else [])
     target = Path(args.output)
     if target.suffix.lower() != ".json":
         parser.error("The settings file must end in .json.")
     job = describe(bpy.context.scene)
+    if args.reference_exr:
+        if not job["pattern"].lower().endswith(".exr"):
+            parser.error("A reference EXR needs an EXR output sequence.")
+        job["required_exr_channels"] = sorted(exr_channels(args.reference_exr))
     target.write_text(json.dumps(job, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print("FrameLedger job:", target, job["pattern"], job["first"], job["last"], job["step"])

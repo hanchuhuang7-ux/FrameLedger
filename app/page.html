@@ -113,7 +113,7 @@ label {
   font-size: 13px;
   font-weight: 650;
 }
-button,input {
+button,input,textarea {
   font: inherit;
 }
 button {
@@ -131,7 +131,7 @@ button {
 button:hover {
   border-color: var(--ready);
 }
-button:focus-visible,input:focus-visible {
+button:focus-visible,input:focus-visible,textarea:focus-visible {
   outline: 3px solid #d29a4a;
   outline-offset: 2px;
 }
@@ -173,7 +173,7 @@ button:disabled {
 .form-section {
   margin-top: 19px;
 }
-input[type=text],input[type=number] {
+input[type=text],input[type=number],textarea {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -403,6 +403,8 @@ input[type=text],input[type=number] {
 <label class="check"><input id="check-png" type="checkbox" checked>检查 PNG 和 EXR 文件结构</label>
 <label class="form-section" for="size">预期图像尺寸（可选）</label><input id="size" type="text" placeholder="例如 1920x1080" spellcheck="false">
 <p class="hint">PNG 核对 CRC。EXR 核对扫描线区块，深度和分块格式单列待复核。</p>
+<details class="details"><summary>EXR 必需通道（可选）</summary>
+<label for="exr-channels">每行一个完整通道名</label><textarea id="exr-channels" rows="3" placeholder="ViewLayer.Depth.Z" spellcheck="false"></textarea></details>
 <button class="primary" type="submit">检查帧序列</button>
 </fieldset></form>
 <p class="status" id="status" role="status" aria-live="polite"></p>

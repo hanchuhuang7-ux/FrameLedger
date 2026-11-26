@@ -8,7 +8,7 @@ import { formatSpans, parseSize, readJob, scanSequence } from './app/scan.mjs';
 const usage = '用法：node cli.mjs <目录> <命名模板> <起始帧> <结束帧> [--step 整数] [--size 宽x高] [--overlay 补帧目录] [--fast] [--json]\n' +
   '示例：node cli.mjs examples/interrupted "shot_####.png" 1 8\n' +
   '读取 Blender 镜头设置：node cli.mjs <目录> --job <镜头.json> [--overlay 补帧目录] [--output 报告.json] [--json]\n' +
-  '默认检查 PNG 的 CRC 和 EXR 扫描线区块。--fast 仅按文件存在和大小检查。\n' +
+  '默认检查 PNG 的 CRC 和 EXR 扫描线区块。用 --require-channel 通道名指定必需 EXR 通道，可重复。--fast 仅清点非空文件。\n' +
   '退出码 0 表示按所选模式通过，1 表示需要补渲染，2 表示参数或读取出错，3 表示只剩待复核帧。';
 
 function parseInteger(text) {
@@ -70,6 +70,12 @@ async function main(args) {
         break;
       }
       case '--fast': options.checkPng = false; break;
+      case '--require-channel': {
+        const name = flags[++i];
+        if (!name || name.startsWith('--')) throw new Error('--require-channel 需要一个完整的 EXR 通道名。');
+        (options.exrChannels ??= []).push(name);
+        break;
+      }
       case '--output':
         output = flags[++i];
         if (!output || output.startsWith('--')) throw new Error('--output 需要报告路径。');

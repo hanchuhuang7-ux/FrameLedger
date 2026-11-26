@@ -90,6 +90,24 @@ test('a block belonging to the wrong EXR part is identified', () => {
   assert.match(verdict(changed).reason, /分部编号/);
 });
 
+test('a same-size beauty file cannot satisfy a depth-and-normal delivery contract', async () => {
+  const settings = { pattern: 's#.exr', first: 1, last: 2, step: 1, checkPng: true,
+    width: 43, height: 37, exrChannels: ['ViewLayer.Depth.Z', 'ViewLayer.Normal.X'] };
+  const entries = [flat, multipart].map((data, i) => ({ name: 's' + (i + 1) + '.exr',
+    size: () => data.length, blocks: async function* () { yield data; } }));
+  const result = await scanSequence(engine, entries, settings);
+  assert.equal(result.format, 'frameledger.report.v2');
+  assert.equal(result.ready, 1);
+  assert.deepEqual(result.damaged, [{ first: 1, last: 1 }]);
+  assert.match(result.details[0].reason, /缺少约定通道.*Depth\.Z/);
+  assert.deepEqual(result.required_exr_channels, settings.exrChannels);
+  const cli = spawnSync(process.execPath, ['cli.mjs', 'examples/exr', 'shot_####.exr', '1', '2',
+    '--require-channel', 'ViewLayer.Depth.Z', '--json'], { encoding: 'utf8' });
+  assert.equal(cli.status, 1);
+  assert.equal(JSON.parse(cli.stdout).ready, 1);
+  await assert.rejects(scanSequence(engine, [], { ...settings, checkPng: false }), /通道/);
+});
+
 test('unknown codecs and supported-looking oversized attributes are explicitly unverified', () => {
   const codec = Buffer.from(flat);
   codec[one.fields.get('compression').data] = 250;

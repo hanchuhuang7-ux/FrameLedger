@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { newExrProbe } from '../dist/engine.mjs';
+import { newExrProbeForChannels } from '../dist/engine.mjs';
 
 const repo = fileURLToPath(new URL('../', import.meta.url));
 const [blender, parent = tmpdir()] = process.argv.slice(2);
@@ -18,8 +18,8 @@ if (render.error) throw render.error;
 assert.equal(render.status, 0, (render.stdout + render.stderr).slice(-3000));
 const corpus = JSON.parse(await readFile(join(root, 'corpus.json'), 'utf8'));
 
-function inspect(bytes, size, stride) {
-  const probe = newExrProbe(...size);
+function inspect(bytes, size, stride, required = []) {
+  const probe = newExrProbeForChannels(...size, required);
   for (let at = 0; at < bytes.length; at += stride) {
     const value = probe(bytes.subarray(at, at + stride), false);
     if (value) return JSON.parse(value);
@@ -39,6 +39,9 @@ for (const sample of corpus.cases) {
   }
   if (inspectable) {
     supported++;
+    if (['multipart', 'interleaved'].includes(sample.layout)) {
+      assert.equal(inspect(bytes, sample.dimensions, 11, ['ViewLayer.Depth.Z', 'ViewLayer.Normal.X']).state, 0);
+    }
     for (const cut of [1, 17]) assert.equal(inspect(bytes.subarray(0, -cut), sample.dimensions, 31).state, 2, sample.name);
     cutDetected += 2;
     assert.equal(inspect(bytes, [sample.dimensions[0] + 1, sample.dimensions[1]], 17).state, 2);

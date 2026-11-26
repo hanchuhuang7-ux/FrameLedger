@@ -18,6 +18,8 @@ pub fn make_matcher(String) -> (String) -> Int32
 
 pub fn new_exr_probe(Int32, Int32) -> (Bytes, Bool) -> String
 
+pub fn new_exr_probe_for_channels(Int32, Int32, FixedArray[String]) -> (Bytes, Bool) -> String
+
 pub fn new_png_probe() -> (Bytes, Bool) -> String
 
 pub fn new_png_probe_for_size(Int32, Int32) -> (Bytes, Bool) -> String
@@ -50,7 +52,7 @@ pub struct ExrProbe {
   // private fields
 }
 pub fn ExrProbe::feed(Self, Bytes, eof? : Bool) -> ExrStatus
-pub fn ExrProbe::new(width? : Int32, height? : Int32) -> Self
+pub fn ExrProbe::new(width? : Int32, height? : Int32, required_channels? : FixedArray[String]) -> Self
 
 #derive(Eq)
 pub(all) enum ExrStatus {

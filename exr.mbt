@@ -34,6 +34,7 @@ priv struct ExrOffset {
 pub struct ExrProbe {
   priv width : Int32
   priv height : Int32
+  priv required : Map[String, String]
   priv mut status : ExrStatus
   priv mut stage : ExrStage
   priv mut pos : Int64
@@ -57,15 +58,34 @@ pub struct ExrProbe {
 }
 
 ///|
-pub fn ExrProbe::new(width~ : Int32 = 0, height~ : Int32 = 0) -> ExrProbe {
-  let status = if (width == 0 && height == 0) || (width > 0 && height > 0) {
-    Reading
+pub fn ExrProbe::new(
+  width~ : Int32 = 0,
+  height~ : Int32 = 0,
+  required_channels~ : FixedArray[String] = [],
+) -> ExrProbe {
+  let required : Map[String, String] = Map([])
+  let mut status = Reading
+  if !((width == 0 && height == 0) || (width > 0 && height > 0)) {
+    status = Malformed("预期宽高必须同时为正整数。")
+  } else if required_channels.length() > 4096 {
+    status = Malformed("必需通道数超出检查上限。")
   } else {
-    Malformed("预期宽高必须同时为正整数。")
+    for label in required_channels {
+      if label.length() == 0 ||
+        label.length() > 1024 ||
+        label.contains("\u0000") {
+        status = Malformed("必需通道名称无效。")
+        break
+      }
+      // Compare UTF-8 input with the same lossless byte keys used for EXR identifiers.
+      let bytes = @utf8.encode(label)
+      required[String::from_iter(bytes.iter().map(b => b.to_char()))] = label
+    }
   }
   {
     width,
     height,
+    required,
     status,
     stage: Version,
     pos: 0L,
@@ -133,12 +153,24 @@ fn ExrProbe::version(self : ExrProbe) -> Unit raise ExrProblem {
 }
 
 ///|
+fn ExrProbe::start_offsets(self : ExrProbe) -> Unit raise ExrProblem {
+  if !self.required.is_empty() {
+    let missing = self.required.values().to_array()
+    missing.sort()
+    raise BrokenExr(
+      "EXR 缺少约定通道 \{missing[0]}（共缺 \{missing.length()} 项）。",
+    )
+  }
+  self.stage = OffsetEntry
+}
+
+///|
 fn ExrProbe::end_header(self : ExrProbe) -> Unit raise ExrProblem {
   if self.header.names.is_empty() {
     guard self.multipart && !self.parts.is_empty() else {
       raise BrokenExr("EXR 头为空。")
     }
-    self.stage = OffsetEntry
+    self.start_offsets()
     return
   }
   if self.parts.length() >= 256 {
@@ -149,6 +181,7 @@ fn ExrProbe::end_header(self : ExrProbe) -> Unit raise ExrProblem {
     self.name_limit,
     self.width,
     self.height,
+    self.required,
   )
   if self.multipart {
     if self.names.contains(part.name) {
@@ -171,7 +204,11 @@ fn ExrProbe::end_header(self : ExrProbe) -> Unit raise ExrProblem {
   }
   self.parts.push(part)
   self.header = ExrHeader::new()
-  self.stage = if self.multipart { AttrName } else { OffsetEntry }
+  if self.multipart {
+    self.stage = AttrName
+  } else {
+    self.start_offsets()
+  }
 }
 
 ///|
@@ -432,7 +469,17 @@ pub fn ExrProbe::feed(
 /// JS bridge: empty while reading or on success, a tagged diagnostic on failure.
 #export_name("newExrProbe")
 pub fn new_exr_probe(width : Int32, height : Int32) -> (Bytes, Bool) -> String {
-  let probe = ExrProbe::new(width~, height~)
+  new_exr_probe_for_channels(width, height, [])
+}
+
+///|
+#export_name("newExrProbeForChannels")
+pub fn new_exr_probe_for_channels(
+  width : Int32,
+  height : Int32,
+  required_channels : FixedArray[String],
+) -> (Bytes, Bool) -> String {
+  let probe = ExrProbe::new(width~, height~, required_channels~)
   fn(data, eof) {
     let result : Json = match probe.feed(data, eof~) {
       Reading | Complete => return ""

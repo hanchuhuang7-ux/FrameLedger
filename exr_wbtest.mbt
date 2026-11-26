@@ -15,12 +15,16 @@ fn sample_attr(
 
 ///|
 /// One half-float Y pixel, raw storage, with the offset calculated from its header.
-fn single_pixel_exr() -> Bytes {
+fn single_pixel_exr(channel~ : Bytes = b"Y") -> Bytes {
   let out = @buffer.Buffer::Buffer()
   out.write_int_le(20000630)
   out.write_int_le(2)
   sample_attr(
-    out, b"channels", b"chlist", b"Y\x00\x01\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x01\x00\x00\x00\x00",
+    out,
+    b"channels",
+    b"chlist",
+    channel +
+    b"\x00\x01\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x01\x00\x00\x00\x00",
   )
   sample_attr(out, b"compression", b"compression", b"\x00")
   for name in [b"dataWindow", b"displayWindow"] {
@@ -36,6 +40,19 @@ fn single_pixel_exr() -> Bytes {
   out.write_int_le(2)
   out.write_int16_le(0)
   out.to_bytes()
+}
+
+///|
+test "UTF-8 channel requirements compare with actual EXR identifier bytes" {
+  let sample = single_pixel_exr(channel=@utf8.encode("深度.Z"))
+  assert_true(
+    ExrProbe::new(required_channels=["深度.Z"]).feed(sample, eof=true) ==
+    Complete,
+  )
+  assert_true(
+    ExrProbe::new(required_channels=["深度.X"]).feed(sample, eof=true)
+    is Malformed(_),
+  )
 }
 
 ///|

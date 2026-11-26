@@ -109,10 +109,13 @@ fn exr_channels(
   data : FixedArray[Byte],
   window : ExrWindow,
   name_limit : Int32,
+  part_name : String,
+  required : Map[String, String],
 ) -> Array[ExrSampling] raise ExrProblem {
   let names : Map[String, Bool] = Map([])
   let groups : Map[Int64, Int64] = Map([])
   let mut at = 0
+  let prefix = if part_name == "" { "" } else { part_name + "." }
   while at < data.length() && data[at] != 0 {
     let begin = at
     while at < data.length() && data[at] != 0 {
@@ -126,6 +129,14 @@ fn exr_channels(
       raise BrokenExr("EXR 通道名重复。")
     }
     names[name] = true
+    if !required.is_empty() {
+      let full = if prefix == "" || name.has_prefix(prefix) {
+        name
+      } else {
+        prefix + name
+      }
+      required.remove(full)
+    }
     let sample_bytes : Int64 = match exr_i32(data, at + 1) {
       0 | 2 => 4L
       1 => 2L
@@ -170,6 +181,7 @@ fn ExrHeader::part(
   name_limit : Int32,
   width : Int32,
   height : Int32,
+  required : Map[String, String],
 ) -> ExrPart raise ExrProblem {
   let kind = match self.fields.get("type") {
     Some(raw) => exr_text(raw, 0, raw.length())
@@ -227,7 +239,13 @@ fn ExrHeader::part(
   }
   ignore(self.field("screenWindowCenter"))
   ignore(self.field("screenWindowWidth"))
-  let sampling = exr_channels(self.field("channels"), data, name_limit)
+  let sampling = exr_channels(
+    self.field("channels"),
+    data,
+    name_limit,
+    name,
+    required,
+  )
   {
     name,
     data,

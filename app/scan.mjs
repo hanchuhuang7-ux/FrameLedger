@@ -5,7 +5,7 @@ export function parseSize(text) {
   return { width: Number(match[1]), height: Number(match[2]) };
 }
 
-export function checkOptions(engine, { pattern, first, last, step, width, height, checkPng, checkExr = checkPng }) {
+export function checkOptions(engine, { pattern, first, last, step, width, height, checkPng, checkExr = checkPng, exrChannels = [] }) {
   if (typeof pattern !== 'string') throw new Error('请输入命名模板。');
   const patternIssue = engine.patternError(pattern);
   if (patternIssue) throw new Error(patternIssue);
@@ -16,6 +16,13 @@ export function checkOptions(engine, { pattern, first, last, step, width, height
   }
   const rangeIssue = engine.rangeError(first, last, step);
   if (rangeIssue) throw new Error(rangeIssue);
+  if (!Array.isArray(exrChannels) || exrChannels.length > 4096 ||
+      exrChannels.some(name => typeof name !== 'string' || !name.length || name.length > 1024 || name.includes('\0'))) {
+    throw new Error('EXR 必需通道应为有效名称列表。');
+  }
+  if (exrChannels.length && !(checkExr && pattern.toLowerCase().endsWith('.exr'))) {
+    throw new Error('核对必需通道需要启用 EXR 结构检查。');
+  }
   if (width != null || height != null) {
     if (![width, height].every(n => Number.isInteger(n) && n > 0 && n <= 2147483647)) {
       throw new Error('预期宽高须同时为正整数。');
@@ -31,6 +38,7 @@ export function readJob(engine, text) {
   const job = JSON.parse(text.replace(/^\uFEFF/, ''));
   if (job?.format !== 'frameledger.job.v1') throw new Error('请选择 FrameLedger v1 镜头设置文件。');
   const options = { pattern: job.pattern, first: job.first, last: job.last, step: job.step, checkPng: true };
+  if (job.required_exr_channels !== undefined) options.exrChannels = job.required_exr_channels;
   if (job.width != null || job.height != null) Object.assign(options, { width: job.width, height: job.height });
   if (job.origin != null) {
     if (typeof job.origin.scene !== 'string' || !job.origin.scene || typeof job.origin.blend_sha256 !== 'string' ||
@@ -69,7 +77,8 @@ async function inspectEntry(engine, entry, options) {
   if (format) {
     const width = options.width ?? 0, height = options.height ?? 0;
     try {
-      const feed = png ? engine.newPngProbeForSize(width, height) : engine.newExrProbe(width, height);
+      const feed = png ? engine.newPngProbeForSize(width, height) :
+        engine.newExrProbeForChannels(width, height, options.exrChannels ?? []);
       const diagnostic = await inspectImage(feed, entry, size);
       if (diagnostic) {
         if (png) { state = 2; reason = diagnostic; }
@@ -133,9 +142,10 @@ export async function scanSequence(engine, entries, options, onProgress = () => 
     }
   }
   details.sort((a, b) => a.frame - b.frame);
-  return { format: report.unverified_count ? 'frameledger.report.v2' : 'frameledger.report.v1',
+  return { format: report.unverified_count || options.exrChannels?.length ? 'frameledger.report.v2' : 'frameledger.report.v1',
     pattern, check_png: !!checkPng, png_checked: pngChecked, check_exr: !!checkExr, exr_checked: exrChecked, expected_width: options.width ?? null,
-    expected_height: options.height ?? null, origin: options.origin ?? null, directory_files: visited, extra_copies: frames.length - result.selected.length,
+    expected_height: options.height ?? null, required_exr_channels: [...new Set(options.exrChannels ?? [])],
+    origin: options.origin ?? null, directory_files: visited, extra_copies: frames.length - result.selected.length,
     ready_from_overlay: overlayReady, ...report, details };
 }
 

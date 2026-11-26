@@ -50,6 +50,7 @@ function show(report) {
   el('expected').textContent = numberFormat.format(report.expected);
   el('scope').textContent = sourceLabel + ' · 帧 ' + report.first + ' 至 ' + report.last + ' · 步长 ' + report.step +
     (overlays.length ? ' · 补帧目录提供 ' + report.ready_from_overlay + ' 帧' : '') +
+    (report.required_exr_channels.length ? ' · 必需通道 ' + report.required_exr_channels.length + ' 项' : '') +
     (!report.check_png && !report.check_exr ? ' · 仅清点非空文件' : '');
   for (const category of categories) {
     el(category).textContent = formatSpans(report[category], report.step);
@@ -108,6 +109,7 @@ async function run() {
       last: el('last').valueAsNumber,
       step: el('step').valueAsNumber,
       checkPng: el('check-png').checked,
+      exrChannels: el('exr-channels').value.split(/\r?\n/).map(name => name.trim()).filter(Boolean),
       ...parseSize(el('size').value),
       origin,
     };
@@ -196,6 +198,7 @@ el('job-file').addEventListener('change', async event => {
     for (const field of ['pattern', 'first', 'last', 'step']) el(field).value = job[field];
     el('size').value = job.width ? job.width + 'x' + job.height : '';
     el('check-png').checked = true;
+    el('exr-channels').value = (job.exrChannels ?? []).join('\n');
     origin = job.origin ?? null;
     invalidate();
     status('已导入 ' + file.name + '，点击“检查帧序列”核对所选目录。');

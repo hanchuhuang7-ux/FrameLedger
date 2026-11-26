@@ -85,11 +85,12 @@ async function checkWindowsOutputAccess(directory, targets, label) {
 const settings = here('shot.json'), beforePath = here('before.json'), stage = here('repaired');
 run(binary, [...base, '--factory-startup', ...py, fixture, '--', 'create', root, format]);
 const sceneHash = await digest(scene);
-run(binary, [...base, scene, ...py, source('blender/shot_settings.py'), '--', settings]);
 await interruptAfterNinthFrame();
 const original = here('original');
 const beforeHashes = await snapshot(original);
 assert.equal(beforeHashes.length, 9);
+const referenceArgs = format === 'exr' ? ['--reference-exr', join(original, beforeHashes[0][0])] : [];
+run(binary, [...base, scene, ...py, source('blender/shot_settings.py'), '--', settings, ...referenceArgs]);
 const audit = [source('cli.mjs'), original, '--job', settings];
 run(process.execPath, [...audit, '--output', beforePath], 1);
 const before = JSON.parse(await readFile(beforePath, 'utf8'));
@@ -101,6 +102,8 @@ let reviewWithheld = null;
 if (format === 'exr') {
   assert.equal(before.exr_checked, 9);
   assert.equal(before.expected_width, 96);
+  assert.equal(before.required_exr_channels.length, 8);
+  assert.ok(before.required_exr_channels.includes('ViewLayer.Depth.Z'));
   const samples = here('supplement'), heldStage = here('partially-reviewed');
   await mkdir(samples);
   const name = frame => 'sh010_v2_' + frame + '_beauty.exr';
@@ -118,8 +121,14 @@ if (format === 'exr') {
   assert.ok(!(await readdir(heldStage)).includes(name(1021)));
   reviewWithheld = 1021;
   const legacy = here('legacy-report.json');
-  await writeFile(legacy, JSON.stringify({ ...before, expected_width: null, expected_height: null }));
+  const old = { ...before, format: 'frameledger.report.v1', expected_width: null, expected_height: null };
+  for (const key of ['required_exr_channels', 'unverified', 'unverified_count', 'exr_checked', 'check_exr']) delete old[key];
+  await writeFile(legacy, JSON.stringify(old));
   assert.equal(record(run(binary, [...repair, legacy, stage, '--dry-run']), 'FRAMELEDGER_REPAIR').planned, 22);
+  const impossible = here('wrong-channels.json'), failedStage = here('wrong-channels-stage');
+  await writeFile(impossible, JSON.stringify({ ...before, required_exr_channels: ['missing.pass.Z'] }));
+  assert.match(run(binary, [...repair, impossible, failedStage], 7), /lacks required channel/);
+  assert.ok(!(await readdir(failedStage)).some(name => name.endsWith('.exr')));
 }
 const apply = (...flags) => record(run(binary, [...repair, beforePath, stage, ...flags]), 'FRAMELEDGER_REPAIR');
 assert.equal(apply('--dry-run').rendered, 0);

@@ -11,7 +11,7 @@ from uuid import uuid4
 import bpy
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from shot_settings import describe, file_hash
+from shot_settings import describe, exr_channels, file_hash
 
 
 def read_json(path):
@@ -87,6 +87,23 @@ def same_staged_job(saved, current):
     return False
 
 
+def channel_contract(report, job):
+    names = report.get("required_exr_channels", [])
+    if (not isinstance(names, list) or len(names) > 4096 or
+            any(not isinstance(n, str) or not n or "\0" in n or len(n) > 1024 for n in names)):
+        raise ValueError("Invalid EXR channel contract.")
+    if names and (report.get("format") != "frameledger.report.v2" or not job["pattern"].lower().endswith(".exr")):
+        raise ValueError("EXR channel contracts require a v2 report for an EXR shot.")
+    return set(names)
+
+
+def verify_channels(path, required):
+    if required:
+        missing = required - exr_channels(path)
+        if missing:
+            raise ValueError("Rendered EXR lacks required channel " + sorted(missing)[0])
+
+
 def file_output_nodes(tree, visited):
     if not tree or tree.as_pointer() in visited:
         return False
@@ -133,7 +150,7 @@ def write_atomic_text(target, value):
         os.replace(pending, target)
 
 
-def render_plan(scene, job, spans, stage):
+def render_plan(scene, job, spans, stage, required_channels=()):
     original_dir = Path(scene.render.frame_path(frame=job["first"])).resolve().parent
     if stage == original_dir:
         raise ValueError("Choose a staging directory separate from the primary render directory.")
@@ -172,6 +189,7 @@ def render_plan(scene, job, spans, stage):
                     if target.exists():
                         if not receipt.is_file() or receipt.read_text(encoding="ascii").strip() != file_hash(target):
                             raise ValueError("Unrecognized or changed staging frame " + name)
+                        verify_channels(target, required_channels)
                         retained += 1
                         continue
                     with pending_sibling(target) as pending:
@@ -180,6 +198,7 @@ def render_plan(scene, job, spans, stage):
                         result = bpy.ops.render.render(write_still=True, scene=scene.name)
                         if "FINISHED" not in result or not pending.is_file() or pending.stat().st_size == 0:
                             raise RuntimeError("Blender failed at frame " + str(frame))
+                        verify_channels(pending, required_channels)
                         write_atomic_text(receipt, file_hash(pending) + "\n")
                         os.replace(pending, target)
                         rendered += 1
@@ -200,8 +219,9 @@ if __name__ == "__main__":
     job = describe(scene)
     report = read_json(args.report)
     ranges, count = repair_ranges(report, job)
+    required_channels = channel_contract(report, job)
     made, retained = (0, 0)
     if count and not args.dry_run:
-        made, retained = render_plan(scene, job, ranges, Path(args.stage).resolve())
+        made, retained = render_plan(scene, job, ranges, Path(args.stage).resolve(), required_channels)
     print("FRAMELEDGER_REPAIR", json.dumps({"planned": count, "rendered": made, "retained": retained,
           "unverified": report.get("unverified_count", 0), "ranges": ranges}))
